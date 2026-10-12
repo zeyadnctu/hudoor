@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/reports/export?course_id=&from=&to=&section=&status=  -> CSV (BOM for Arabic Excel)
 export async function GET(req: NextRequest) {
   const svc = serviceSupabase();

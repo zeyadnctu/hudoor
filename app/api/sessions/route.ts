@@ -4,6 +4,8 @@ import { sessionCreateSchema, manualMarkSchema } from "@/lib/validators";
 import { randomBytes } from "crypto";
 import { audit } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/sessions — start a session
 export async function POST(req: NextRequest) {
   const sb = serverSupabase();

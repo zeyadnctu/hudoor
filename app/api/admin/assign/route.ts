@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/admin-auth";
 import { audit } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 const assignSchema = z.object({
   action: z.enum(["assign_professor", "enroll_student", "enroll_csv"]),
   course_id: z.string().uuid(),

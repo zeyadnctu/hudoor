@@ -3,6 +3,8 @@ import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { audit } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const ctx = await requireAdmin();
   if (!ctx) return NextResponse.json({ error: "forbidden" }, { status: 403 });

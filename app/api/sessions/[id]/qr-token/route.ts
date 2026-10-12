@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { signQrToken } from "@/lib/qr-token";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/sessions/[id]/qr-token — professor/admin only; signs with server-side secret
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const sb = serverSupabase();

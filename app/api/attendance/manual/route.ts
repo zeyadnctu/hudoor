@@ -3,6 +3,8 @@ import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { manualMarkSchema } from "@/lib/validators";
 import { audit } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // Professor manual mark / override (reason required)
 export async function POST(req: NextRequest) {
   const sb = serverSupabase();

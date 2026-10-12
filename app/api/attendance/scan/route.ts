@@ -5,6 +5,8 @@ import { verifyQrToken } from "@/lib/qr-token";
 import { haversineM, clientIp } from "@/lib/geo";
 import { rateLimit } from "@/lib/rate-limit";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
   try {

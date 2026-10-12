@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/admin-auth";
 import { audit } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 const catalogSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("faculty"), name_en: z.string().min(1), name_ar: z.string().min(1) }),
   z.object({ kind: z.literal("department"), faculty_id: z.string().uuid(), name_en: z.string().min(1), name_ar: z.string().min(1) }),
