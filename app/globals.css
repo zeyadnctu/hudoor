@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Hudoor tokens ===== */
+:root {
+  --ink: #1f2a33;
+  --chalk: #eef0ea;
+  --register: #2f5d8a;
+  --stamp: #2e9b5f;
+  --brick: #b5432e;
+  --hi: #d9a21b;
+  --hairline: #d4d8cc;
+  --motion-stamp: 480ms;
+  color-scheme: light;
+}
+.dark {
+  --hairline: #33414d;
+  color-scheme: dark;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  font-family: "IBM Plex Sans Arabic", "Readex Pro", system-ui, sans-serif;
+  line-height: 1.7;
+  -webkit-tap-highlight-color: transparent;
+}
+.font-display { font-family: "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* visible keyboard focus everywhere */
+:focus-visible {
+  outline: 3px solid var(--register);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* register ruled paper (texture of the product, not decoration) */
+.ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 35px,
+    color-mix(in srgb, var(--register) 14%, transparent) 35px,
+    color-mix(in srgb, var(--register) 14%, transparent) 36px
+  );
+}
+.ruled-tight {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    color-mix(in srgb, var(--register) 12%, transparent) 27px,
+    color-mix(in srgb, var(--register) 12%, transparent) 28px
+  );
+}
+
+/* ===== stamp press: the single memorable motion ===== */
+@keyframes stampPress {
+  0% { opacity: 0; transform: scale(2.1) rotate(-14deg); }
+  55% { opacity: 1; transform: scale(0.94) rotate(-5deg); }
+  75% { transform: scale(1.03) rotate(-6.5deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+.stamp-press { animation: stampPress var(--motion-stamp) cubic-bezier(0.2, 0.9, 0.25, 1.2) both; }
+
+/* draining QR frame: linear drain over the token TTL */
+.qr-drain { transition: stroke-dashoffset 1s linear; }
+
+/* skeleton blocks that match layout (never whole-page spinners) */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.skeleton { animation: skeletonPulse 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp-press { animation-duration: 1ms; }
+  .skeleton { animation: none; }
+  .qr-drain { transition: none; }
+  html { scroll-behavior: auto; }
+}
