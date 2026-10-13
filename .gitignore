@@ -10,5 +10,10 @@ out
 
 # misc
 *.log
+*.txt
 .DS_Store
 tsconfig.tsbuildinfo
+.testbuild/
+
+# agent environment (not app code)
+opencode.json
