@@ -47,9 +47,15 @@ export async function POST(req: NextRequest) {
   const { data: prev } = scope_id
     ? await prevQ.eq("scope_id", scope_id).maybeSingle()
     : await prevQ.is("scope_id", null).maybeSingle();
-  const { error } = await svc.from("app_settings").upsert(
-    { scope_type, scope_id: scope_id || null, key, value },
-    { onConflict: "scope_type,scope_id,key" }
+  // delete-then-insert: scope_id is nullable so no unique constraint can
+  // match it for onConflict; the uq_app_settings_scope_key index guards dupes
+  const delQ = svc.from("app_settings").delete().eq("scope_type", scope_type).eq("key", key);
+  const { error: delErr } = scope_id
+    ? await delQ.eq("scope_id", scope_id)
+    : await delQ.is("scope_id", null);
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 400 });
+  const { error } = await svc.from("app_settings").insert(
+    { scope_type, scope_id: scope_id || null, key, value }
   );
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   await svc.from("settings_history").insert({

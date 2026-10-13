@@ -123,10 +123,14 @@ alter table flagged_attempts enable row level security;
 alter table audit_logs enable row level security;
 alter table settings enable row level security;
 
--- helper: current role
-create or replace function public.my_role() returns text as $$
+-- helper: current role (hardened: fixed search_path, no anon RPC execute;
+-- see 004_my_role_hardening on live DB)
+create or replace function public.my_role() returns text
+language sql stable security definer
+set search_path = public
+as $$
   select role from public.profiles where id = auth.uid();
-$$ language sql stable security definer;
+$$;
 
 -- Public catalog readable by authenticated users
 create policy "auth read faculties" on faculties for select to authenticated using (true);

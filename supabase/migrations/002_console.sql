@@ -94,12 +94,21 @@ create table if not exists section_groups (
   name text not null,
   created_at timestamptz default now()
 );
-alter table student_details
-  add constraint fk_sd_program foreign key (program_id) references programs(id) on delete set null;
-alter table student_details
-  add constraint fk_sd_level foreign key (level_id) references levels(id) on delete set null;
-alter table student_details
-  add constraint fk_sd_section foreign key (section_id) references section_groups(id) on delete set null;
+DO $$ BEGIN
+  alter table student_details
+    add constraint fk_sd_program foreign key (program_id) references programs(id) on delete set null;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter table student_details
+    add constraint fk_sd_level foreign key (level_id) references levels(id) on delete set null;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  alter table student_details
+    add constraint fk_sd_section foreign key (section_id) references section_groups(id) on delete set null;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ===== TAs =====
 create table if not exists course_tas (
@@ -123,8 +132,11 @@ create table if not exists rooms (
   geofence_radius_m int not null default 100,
   deleted_at timestamptz, created_at timestamptz default now()
 );
-alter table attendance_sessions
-  add constraint fk_session_room foreign key (room_id) references rooms(id) on delete set null;
+DO $$ BEGIN
+  alter table attendance_sessions
+    add constraint fk_session_room foreign key (room_id) references rooms(id) on delete set null;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ===== timetable =====
 create table if not exists timetable_slots (
@@ -233,14 +245,17 @@ on conflict (key) do nothing;
 
 -- ===== scoped settings + history =====
 create table if not exists app_settings (
+  id uuid primary key default uuid_generate_v4(),
   scope_type text not null check (scope_type in ('global','faculty','department','course','session')),
   scope_id uuid,
   key text not null,
   value jsonb not null,
   updated_by uuid references profiles(id) on delete set null,
-  updated_at timestamptz default now(),
-  primary key (scope_type, scope_id, key)
+  updated_at timestamptz default now()
 );
+-- null-safe uniqueness: NULL scope_id (global rows) maps to the nil uuid
+create unique index if not exists uq_app_settings_scope_key
+  on app_settings (scope_type, (coalesce(scope_id, '00000000-0000-0000-0000-000000000000')), key);
 insert into app_settings (scope_type, scope_id, key, value) values
   ('global', null, 'qr_rotation_seconds', '10'),
   ('global', null, 'qr_token_ttl_seconds', '15'),
