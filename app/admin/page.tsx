@@ -1,205 +1,137 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { browserSupabase } from "@/lib/supabase";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useApp } from "@/components/providers";
-import {
-  Button, Input, Select, Label, StatusPill, StatNumber,
-  DataTable, THead, Th, Td, SkeletonRows, EmptyState
-} from "@/components/ui";
-import { AdminManage } from "@/components/admin-manage";
-import {
-  FileDown, Search, Users, CalendarCheck, ClipboardCheck, Flag, Inbox, ShieldCheck
-} from "lucide-react";
+import { Button, StatNumber } from "@/components/ui";
+import { browserSupabase } from "@/lib/supabase";
+import { Radio, Plus, UserPlus, BookPlus, Megaphone, Flag } from "lucide-react";
 
-type Row = {
-  id: string; scanned_at: string; method: string; status: string; student_id: string;
-  course_code: string; course_id: string; name_ar: string; name_en: string; university_id: string;
-};
-
-export default function Admin() {
+export default function AdminDashboard() {
   const { t } = useApp();
-  const [rows, setRows] = useState<Row[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
-  const [pending, setPending] = useState<any[]>([]);
-  const [flags, setFlags] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [f, setF] = useState({ course: "", from: "", to: "", status: "", q: "" });
+  const [d, setD] = useState<any>(null);
+  const [codes, setCodes] = useState<Record<string, string>>({});
 
-  useEffect(() => { load(); }, []);
   async function load() {
-    setLoading(true);
-    const sb = browserSupabase();
-    const { data: cs } = await sb.from("courses").select("id,code,name_ar,name_en").order("code");
-    setCourses(cs ?? []);
-    const { data: rec } = await sb.from("attendance_records")
-      .select("id,scanned_at,method,status,student_id,attendance_sessions!inner(course_id,courses(code,name_ar,name_en))")
-      .order("scanned_at", { ascending: false }).limit(1000);
-    const sids = [...new Set(((rec ?? []) as any[]).map(r => r.student_id))];
-    let byUser: Record<string, any> = {};
-    if (sids.length) {
-      const { data: dets } = await sb.from("student_details").select("user_id,full_name_ar,full_name_en,university_id").in("user_id", sids);
-      (dets ?? []).forEach((d: any) => { byUser[d.user_id] = d; });
+    const r = await fetch("/api/console/dashboard");
+    if (!r.ok) return;
+    const j = await r.json();
+    setD(j);
+    const cids = [...new Set([...(j.live ?? []).map((s: any) => s.course_id), ...(j.low ?? []).map((l: any) => l.course_id)])];
+    if (cids.length) {
+      const sb = browserSupabase();
+      const { data } = await sb.from("courses").select("id,code").in("id", cids);
+      const m: Record<string, string> = {};
+      for (const c of (data ?? []) as any[]) m[c.id] = c.code;
+      setCodes(m);
     }
-    setRows(((rec ?? []) as any[]).map(r => ({
-      id: r.id, scanned_at: r.scanned_at, method: r.method, status: r.status, student_id: r.student_id,
-      course_id: r.attendance_sessions.course_id,
-      course_code: r.attendance_sessions.courses.code,
-      name_ar: byUser[r.student_id]?.full_name_ar ?? "",
-      name_en: byUser[r.student_id]?.full_name_en ?? "",
-      university_id: byUser[r.student_id]?.university_id ?? ""
-    })));
-    const { data: p } = await sb.from("profiles").select("id,email,role,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(50);
-    setPending(p ?? []);
-    const { data: fl } = await sb.from("flagged_attempts").select("id,reason,ip,created_at,device_id").order("created_at", { ascending: false }).limit(50);
-    setFlags(fl ?? []);
-    setLoading(false);
   }
-
-  const filtered = useMemo(() => rows.filter(r => {
-    if (f.course && r.course_id !== f.course) return false;
-    if (f.status && r.status !== f.status) return false;
-    if (f.from && r.scanned_at < f.from) return false;
-    if (f.to && r.scanned_at > f.to + "T23:59") return false;
-    if (f.q && !`${r.name_ar} ${r.name_en} ${r.university_id}`.includes(f.q)) return false;
-    return true;
-  }), [rows, f]);
-
-  async function approve(id: string, status: string) {
-    const sb = browserSupabase();
-    await sb.from("profiles").update({ status }).eq("id", id);
+  useEffect(() => {
     load();
-  }
-  async function resetDevice(studentId: string) {
+    const id = setInterval(load, 15000);
     const sb = browserSupabase();
-    await sb.from("devices").delete().eq("student_id", studentId);
-  }
+    const ch = sb.channel("admin-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_sessions" }, () => load())
+      .subscribe();
+    return () => { clearInterval(id); sb.removeChannel(ch); };
+  }, []);
 
-  const counts = useMemo(() => ({
-    students: new Set(rows.map(r => r.student_id)).size,
-    sessions: 0,
-    records: rows.length,
-    flags: flags.length
-  }), [rows, flags]);
+  if (!d) return <p className="p-6 text-neutral-500">Loading…</p>;
+
+  const queues = [
+    { n: d.queues.profiles, href: "/admin/requests", label: t.approvals },
+    { n: d.queues.excuses, href: "/admin/requests", label: t.excuses },
+    { n: d.queues.disputes, href: "/admin/attendance", label: t.disputes },
+    { n: d.queues.service, href: "/admin/requests", label: t.requests },
+    { n: d.queues.flags, href: "/admin/flagged", label: t.flagged }
+  ];
 
   return (
-    <main className="mx-auto max-w-6xl px-5 py-6">
+    <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold">{t.dashboard}</h1>
-          <p className="text-neutral-500">{t.attendanceTable}</p>
+          <p className="text-neutral-500">{t.overview}</p>
         </div>
-        <a href={`/api/reports/export?course_id=${f.course}&from=${f.from}&to=${f.to}&status=${f.status}`}>
-          <Button variant="outline"><FileDown size={18} strokeWidth={2} /> {t.exportCsv}</Button>
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/users"><Button variant="outline"><UserPlus size={18} strokeWidth={2} /> {t.newUser}</Button></Link>
+          <Link href="/admin/courses"><Button variant="outline"><BookPlus size={18} strokeWidth={2} /> {t.newCourse}</Button></Link>
+          <Link href="/admin/notifications"><Button variant="outline"><Megaphone size={18} strokeWidth={2} /> {t.sendNotice}</Button></Link>
+        </div>
       </div>
 
-      {/* stat numbers with hairline separators, not cards */}
       <section className="mt-5 grid grid-cols-2 gap-6 border-y-2 border-ink/15 py-5 sm:grid-cols-4 dark:border-white/20" aria-label="stats">
-        <StatNumber value={counts.students} label={t.student} />
-        <StatNumber value={counts.records} label={t.recentScans} />
-        <StatNumber value={counts.flags} label={t.flagged} />
-        <StatNumber value={pending.length} label={t.approvals} />
+        <StatNumber value={d.live.length} label={t.liveNow} />
+        <StatNumber value={`${d.today.rate}%`} label={t.todayRate} sub={`${d.today.present}/${d.today.expected}`} />
+        <StatNumber value={d.low.length} label={t.lowAtt} sub={`< ${d.minPct}%`} />
+        <StatNumber value={d.queues.flags} label={t.flagged} />
       </section>
 
-      {/* filters: one row, keyboard friendly */}
-      <section className="mt-5" aria-label={t.filters}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <div><Label>{t.course}</Label>
-            <Select value={f.course} onChange={e => setF({ ...f, course: e.target.value })}>
-              <option value="">{t.all}</option>
-              {courses.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
-            </Select>
-          </div>
-          <div><Label>{t.from}</Label><Input type="date" value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></div>
-          <div><Label>{t.to}</Label><Input type="date" value={f.to} onChange={e => setF({ ...f, to: e.target.value })} /></div>
-          <div><Label>{t.status}</Label>
-            <Select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
-              <option value="">{t.all}</option>
-              <option value="present">present</option>
-              <option value="late">late</option>
-              <option value="absent">absent</option>
-              <option value="excused">excused</option>
-            </Select>
-          </div>
-          <div className="col-span-2"><Label>{t.search}</Label>
-            <div className="relative">
-              <Search size={18} strokeWidth={2} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <Input className="!ps-10" value={f.q} onChange={e => setF({ ...f, q: e.target.value })} placeholder={t.search} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* attendance table */}
-      <section className="mt-4" aria-label={t.attendanceTable}>
-        <DataTable>
-          <THead>
-            <Th>{t.name}</Th><Th>{t.universityId}</Th><Th>{t.course}</Th><Th>{t.time}</Th><Th>{t.status}</Th><Th>{t.method}</Th><Th><span className="sr-only">actions</span></Th>
-          </THead>
-          <tbody>
-            {loading && <SkeletonRows rows={8} cols={7} />}
-            {!loading && filtered.map(r => (
-              <tr key={r.id} className="border-b border-black/10 last:border-0 hover:bg-chalk/60 dark:border-white/10 dark:hover:bg-white/5">
-                <Td className="font-medium">{r.name_ar || r.name_en}</Td>
-                <Td className="tnum">{r.university_id}</Td>
-                <Td className="tnum font-semibold">{r.course_code}</Td>
-                <Td className="tnum whitespace-nowrap">{new Date(r.scanned_at).toLocaleString()}</Td>
-                <Td><StatusPill status={r.status} /></Td>
-                <Td>{r.method === "manual" ? t.manualMethod : t.scanMethod}</Td>
-                <Td className="whitespace-nowrap"><button className="font-semibold text-register underline-offset-4 hover:underline" onClick={() => resetDevice(r.student_id)}>{t.resetDevice}</button></Td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
-        {!loading && filtered.length === 0 && (
-          <div className="rounded-md2 border border-black/10 dark:border-white/15">
-            <EmptyState icon={<Inbox size={28} strokeWidth={1.75} />} title={t.nothingYet} hint={t.noSessionsHint} />
-          </div>
-        )}
-        <p className="tnum mt-2 text-sm text-neutral-500">{filtered.length} / {rows.length}</p>
-      </section>
-
-      {/* approvals + flags */}
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
-        <section aria-label={t.approvals}>
-          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><ShieldCheck size={20} strokeWidth={2} /> {t.approvals}</h2>
-          <div className="mt-3 rounded-md2 border border-black/10 dark:border-white/15">
-            {pending.length === 0 && <p className="p-4 text-neutral-500">—</p>}
-            {pending.map(p => (
-              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 p-4 last:border-0 dark:border-white/10">
-                <div><div className="font-medium">{p.email}</div><div className="text-sm text-neutral-500">{p.role}</div></div>
-                <div className="flex gap-2">
-                  <Button variant="stamp" className="!min-h-[44px]" onClick={() => approve(p.id, "approved")}>{t.approve}</Button>
-                  <Button variant="brick" className="!min-h-[44px]" onClick={() => approve(p.id, "rejected")}>{t.reject}</Button>
+      <div className="mt-6 grid gap-8 lg:grid-cols-2">
+        <section aria-label={t.liveNow}>
+          <h2 className="font-display flex items-center gap-2 text-xl font-bold">
+            <span className="relative flex h-2.5 w-2.5"><span className="absolute h-full w-full animate-ping rounded-full bg-stamp" /><span className="h-2.5 w-2.5 rounded-full bg-stamp" /></span>
+            {t.liveNow}
+          </h2>
+          <div className="mt-3 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+            {d.live.length === 0 && <p className="p-4 text-neutral-500">—</p>}
+            {d.live.map((s: any) => (
+              <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-3">
+                <div>
+                  <span className="tnum font-display font-semibold">{codes[s.course_id] ?? s.course_id.slice(0, 8)}</span>
+                  <span className="ms-2 text-sm text-neutral-500">{s.courses?.name_ar}</span>
                 </div>
+                <Link href={`/professor/session/${s.id}`} className="flex min-h-[44px] items-center gap-1 rounded-md2 bg-stamp-light px-3 text-sm font-bold text-stamp-dark dark:bg-stamp/20 dark:text-emerald-300">
+                  <Radio size={16} strokeWidth={2} /> {t.liveNow}
+                </Link>
               </div>
             ))}
           </div>
         </section>
-        <section aria-label={t.flagged}>
-          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><Flag size={20} strokeWidth={2} /> {t.flagged}</h2>
-          <DataTable>
-            <THead><Th>{t.time}</Th><Th>{t.status}</Th><Th>IP</Th></THead>
-            <tbody>
-              {flags.map(fl => (
-                <tr key={fl.id} className="border-b border-black/10 last:border-0 dark:border-white/10">
-                  <Td className="tnum whitespace-nowrap">{new Date(fl.created_at).toLocaleString()}</Td>
-                  <Td><span className="rounded-full bg-brick-light px-3 py-1 text-sm font-semibold text-brick-dark dark:bg-brick/20 dark:text-red-300">{fl.reason}</span></Td>
-                  <Td className="tnum">{fl.ip}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </DataTable>
+
+        <section aria-label={t.lowAtt}>
+          <h2 className="font-display text-xl font-bold">{t.lowAtt} (&lt; {d.minPct}%)</h2>
+          <div className="mt-3 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+            {d.low.length === 0 && <p className="p-4 text-neutral-500">—</p>}
+            {d.low.slice(0, 8).map((l: any, i: number) => (
+              <div key={i} className="flex items-center justify-between px-4 py-2.5 text-[15px]">
+                <span className="font-medium">{l.name} <span className="tnum text-sm text-neutral-500">{l.university_id} · {codes[l.course_id] ?? ""}</span></span>
+                <span className="tnum font-display text-lg font-bold text-hi-dark dark:text-amber-300">{l.pct}%</span>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
 
-      <AdminManage />
+      <section className="mt-6" aria-label={t.pendingDecisions}>
+        <h2 className="font-display text-xl font-bold">{t.pendingDecisions}</h2>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {queues.map(q => (
+            <Link key={q.label} href={q.href} className="rounded-md2 border border-black/10 px-4 py-3 transition-colors hover:border-register dark:border-white/15">
+              <div className="tnum font-display text-3xl font-bold">{q.n}</div>
+              <div className="text-sm font-medium text-neutral-500">{q.label}</div>
+            </Link>
+          ))}
+        </div>
+      </section>
 
-      <div className="mt-8 flex items-center gap-6 border-t-2 border-ink/15 pt-4 text-sm text-neutral-500 dark:border-white/20">
-        <span className="flex items-center gap-1.5"><Users size={16} strokeWidth={2} /> RLS enforced</span>
-        <span className="flex items-center gap-1.5"><CalendarCheck size={16} strokeWidth={2} /> server time</span>
-        <span className="flex items-center gap-1.5"><ClipboardCheck size={16} strokeWidth={2} /> audit logged</span>
+      <section className="mt-6" aria-label={t.flagged}>
+        <h2 className="font-display flex items-center gap-2 text-xl font-bold"><Flag size={20} strokeWidth={2} /> {t.flagged}</h2>
+        <div className="mt-3 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+          {d.flags.length === 0 && <p className="p-4 text-neutral-500">—</p>}
+          {d.flags.map((f: any) => (
+            <div key={f.id} className="flex justify-between gap-2 px-4 py-2.5 text-sm">
+              <span className="rounded-full bg-brick-light px-2.5 py-0.5 text-xs font-bold text-brick-dark dark:bg-brick/20 dark:text-red-300">{f.reason}</span>
+              <span className="tnum shrink-0 text-neutral-500">{new Date(f.created_at).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+        <Link href="/admin/flagged" className="mt-2 inline-block font-semibold text-register hover:underline">{t.flagged}</Link>
+      </section>
+
+      <div className="mt-6 flex items-center gap-2">
+        <Plus size={18} strokeWidth={2} />
+        <Link href="/admin/attendance" className="font-semibold text-register hover:underline">{t.explorer}</Link>
       </div>
-    </main>
+    </div>
   );
 }

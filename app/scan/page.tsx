@@ -31,6 +31,12 @@ function codeCopy(t: any, code: string): { title: string; fix: string; icon: Rea
       return { title: t.err_weak_gps, fix: t.err_weak_gps_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
     case "session_closed":
       return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+    case "session_paused":
+      return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+    case "too_late":
+      return { title: t.err_late, fix: t.err_late_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+    case "outside_campus":
+      return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
     case "not_eligible":
       return { title: t.err_pending, fix: t.err_pending_fix, icon: <ClipboardList size={40} strokeWidth={1.75} /> };
     case "unauthenticated":
@@ -132,6 +138,7 @@ function ScanInner() {
 
   if (res.status === "success") {
     const already = res.code === "already_marked";
+    const late = res.code === "marked_late";
     const time = res.time ? new Date(res.time) : new Date();
     const hhmmss = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) as string;
     return (
@@ -146,13 +153,13 @@ function ScanInner() {
 
           <div className="py-10 text-center">
             <Stamp
-              top={already ? t.alreadyRecorded : t.presentStamp}
+              top={already ? t.alreadyRecorded : late ? t.lateStamp : t.presentStamp}
               bottom={hhmmss}
-              tone={already ? "hi" : "stamp"}
+              tone={already || late ? "hi" : "stamp"}
             />
             <p className="mt-4 flex items-center justify-center gap-2 text-lg font-semibold text-stamp-dark dark:text-emerald-300">
               <CheckCircle2 size={22} strokeWidth={2} />
-              {already ? t.alreadyHint : t.markedPresent}
+              {already ? t.alreadyHint : late ? t.markedLate : t.markedPresent}
             </p>
           </div>
 

@@ -32,6 +32,22 @@ npm run dev  # http://localhost:3000
 - Geofence is soft signal: Haversine + accuracy margin; per-session toggle; mock/low-accuracy rejected.
 - Server time (`now()`) used for all expiry/active checks; client countdown is display-only.
 - CSV includes BOM for Arabic Excel.
+- Late verdict is server-computed (`present_within_min` / `late_after_min` / grace, narrowest scope wins).
+- View-as switches role gating + banner only; record data stays under RLS. Read-only by convention.
+
+## Adding a new managed resource (no rewriting)
+1. Migration: `create table` + RLS (admin write, sensible reads) + `deleted_at` if trashable.
+2. `lib/resources.ts`: one `ResourceDef` entry (fields, search cols, `pk` if not `id`).
+3. `lib/permissions.ts`: nothing needed if it fits an existing resource name; otherwise add the name to `RESOURCES` and grant it in `SYSTEM_MATRIX`.
+4. Page: `app/admin/<name>/page.tsx` rendering `<CrudPage resource="<name>" columns={...} />` (+ optional detail drawer).
+5. Sidebar: one line in `components/console/AdminShell.tsx` NAV.
+6. API: none — `app/api/console/[resource]` already does list/create/edit/delete with permission checks + before/after audit + soft delete.
+Custom behavior (joins, side effects) gets a dedicated route using `requirePerm` from `lib/guard.ts`.
+
+## Console migrations
+Run in order after 001: `002_console.sql` (all tables + RLS), `003_heads.sql` (heads),
+then `seed_console.sql` (demo roles grants, rooms, program). New env: `IMPERSONATION_SECRET`
+(32+ hex) enables admin view-as.
 
 ## Test plan (cheating)
 1. Photo of QR to friend → token expires in ~15s; friend scan gets `expired_code`; attempt logged in flagged_attempts.

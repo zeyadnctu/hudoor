@@ -16,14 +16,34 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   const [course, setCourse] = useState<any>(null);
   const [ended, setEnded] = useState(false);
   const [projector, setProjector] = useState(false);
-  const [manual, setManual] = useState({ student_id: "", reason: "" });
+  const [manual, setManual] = useState({ student_id: "", reason: "", status: "present" });
   const [loading, setLoading] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [endsAt, setEndsAt] = useState("");
+  const [lateAfter, setLateAfter] = useState<number | null>(null);
+
+  async function op(name: string) {
+    const r = await fetch(`/api/sessions?id=${id}&op=${name}`, { method: "PATCH" });
+    const j = await r.json().catch(() => ({}));
+    if (name === "duplicate" && j.id) { location.href = `/professor/session/${j.id}`; return; }
+    refreshMeta();
+  }
+  async function refreshMeta() {
+    const sb = browserSupabase();
+    const { data: s } = await sb.from("attendance_sessions").select("status,ends_at,late_after_min").eq("id", id).maybeSingle();
+    if (!s) return;
+    setPaused((s as any).status === "paused");
+    setEnded((s as any).status === "ended");
+    setEndsAt((s as any).ends_at ?? "");
+    setLateAfter((s as any).late_after_min ?? null);
+  }
 
   async function fetchToken() {
     const r = await fetch(`/api/sessions/${id}/qr-token`);
     const j = await r.json();
     if (j.url) { setUrl(j.url); setTtl(j.expiresIn ?? 10); setCountdown(j.expiresIn ?? 10); }
     else if (j.error === "ended") setEnded(true);
+    else if (j.error === "paused") setPaused(true);
   }
   useEffect(() => {
     fetchToken();
@@ -36,10 +56,13 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   useEffect(() => {
     const sb = browserSupabase();
     (async () => {
-      const { data: s } = await sb.from("attendance_sessions").select("status,course_id,courses(code,name_ar,name_en)").eq("id", id).maybeSingle();
+      const { data: s } = await sb.from("attendance_sessions").select("status,course_id,late_after_min,ends_at,courses(code,name_ar,name_en)").eq("id", id).maybeSingle();
       if ((s as any)?.status === "ended") setEnded(true);
+      setPaused((s as any)?.status === "paused");
+      setEndsAt((s as any)?.ends_at ?? "");
+      setLateAfter((s as any)?.late_after_min ?? null);
       setCourse((s as any)?.courses ?? null);
-      const { data } = await sb.from("attendance_records").select("id,student_id,scanned_at,method").eq("session_id", id).order("scanned_at", { ascending: false }).limit(200);
+      const { data } = await sb.from("attendance_records").select("id,student_id,scanned_at,method,status").eq("session_id", id).order("scanned_at", { ascending: false }).limit(200);
       const recs = data ?? [];
       const ids = [...new Set(recs.map((x: any) => x.student_id))];
       let names: Record<string, string> = {};
@@ -67,8 +90,25 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   }
   async function markManual() {
     if (!manual.student_id || !manual.reason) return;
-    const r = await fetch("/api/attendance/manual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: id, student_id: manual.student_id, reason: manual.reason, status: "present" }) });
-    if (r.ok) setManual({ student_id: "", reason: "" });
+    const r = await fetch("/api/attendance/manual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: id, student_id: manual.student_id, reason: manual.reason, status: manual.status }) });
+    if (r.ok) setManual({ student_id: "", reason: "", status: "present" });
+  }
+  async function unmark(recordId: string) {
+    const reason = prompt(`${t.unmark}? ${t.manualReason}`);
+    if (!reason || reason.trim().length < 3) return;
+    const r = await fetch("/api/console/attendance", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ record_ids: [recordId], unmark: true, reason })
+    });
+    if (r.ok) setPresent(p => p.filter(x => x.id !== recordId));
+  }
+  async function flagStudent(studentId: string) {
+    const note = prompt(t.flagStudent);
+    if (note === null) return;
+    await fetch("/api/console/flags", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "flag", user_id: studentId, session_id: id, reason: "professor_flag", comment: note })
+    });
   }
 
   const fraction = countdown / Math.max(1, ttl);
@@ -84,7 +124,9 @@ export default function SessionLive({ params }: { params: { id: string } }) {
             <h1 className={`font-display font-bold leading-tight ${projector ? "text-5xl" : "text-3xl"}`}>
               {course ? (course.name_ar || course.name_en) : ""}
             </h1>
-            <div className="mt-1"><StatusPill status={ended ? "ended" : "active"} /></div>
+            <div className="mt-1"><StatusPill status={ended ? "ended" : paused ? "late" : "active"} /></div>
+            {lateAfter != null && <p className="tnum mt-1 text-sm text-neutral-500">{t.lateMin}: {lateAfter}</p>}
+            {endsAt && !ended && <p className="tnum mt-1 text-sm text-neutral-500">{t.time}: {new Date(endsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>}
           </div>
           <div className="flex items-end gap-8">
             <div>
@@ -93,14 +135,21 @@ export default function SessionLive({ params }: { params: { id: string } }) {
               </div>
               <div className="mt-1 text-base font-medium text-neutral-500">{t.presentCount}</div>
             </div>
-            <div className="flex gap-2 pb-1">
+            <div className="flex flex-wrap gap-2 pb-1">
               <Button variant="outline" onClick={() => setProjector(p => !p)}>
                 <Projector size={18} strokeWidth={2} /> {projector ? t.exitProjector : t.projectorMode}
               </Button>
               {!ended && (
-                <Button variant="brick" onClick={end}>
-                  <Square size={18} strokeWidth={2} /> {t.endSession}
-                </Button>
+                <>
+                  <Button variant="outline" onClick={() => op(paused ? "resume" : "pause")}>
+                    {paused ? t.resume : t.pause}
+                  </Button>
+                  <Button variant="outline" onClick={() => op("extend")}>{t.extend}</Button>
+                  <Button variant="outline" onClick={() => op("duplicate")}>{t.duplicate}</Button>
+                  <Button variant="brick" onClick={end}>
+                    <Square size={18} strokeWidth={2} /> {t.endSession}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -110,7 +159,7 @@ export default function SessionLive({ params }: { params: { id: string } }) {
       <div className={`mx-auto grid max-w-6xl gap-8 px-5 py-6 ${projector ? "lg:grid-cols-1" : "lg:grid-cols-[auto_1fr]"}`}>
         {/* QR in draining frame */}
         <section aria-label="QR" className={projector ? "text-center" : ""}>
-          {!ended ? (
+          {!ended && !paused ? (
             <>
               <QrFrame fraction={fraction} size={qrSize}>
                 {url ? <QRCodeSVG value={url} size={qrSize} /> : <div className="skeleton bg-black/10 dark:bg-white/10" style={{ width: qrSize, height: qrSize }} />}
@@ -119,6 +168,10 @@ export default function SessionLive({ params }: { params: { id: string } }) {
                 {t.newCodeIn} <span className="text-register">{countdown}</span>
               </p>
             </>
+          ) : paused && !ended ? (
+            <p className="rounded-md2 border-2 border-hi/60 bg-hi-light/50 p-8 text-center font-display text-2xl font-bold text-hi-dark dark:bg-hi/10 dark:text-amber-300">
+              {t.pause} — {t.resume}
+            </p>
           ) : (
             <p className="rounded-md2 border-2 border-black/15 p-8 text-center font-display text-2xl font-bold dark:border-white/20">
               {t.sessionEnded}
@@ -146,9 +199,16 @@ export default function SessionLive({ params }: { params: { id: string } }) {
                       <tr key={p.id} className="border-b border-black/10 last:border-0 dark:border-white/10">
                         <td className="tnum px-4 py-2.5 text-neutral-500">{present.length - i}</td>
                         <td className="px-4 py-2.5 font-medium">{p.label}</td>
-                        <td className="tnum px-4 py-2.5 text-end text-neutral-500">
+                        <td className="px-4 py-2.5"><StatusPill status={p.status ?? "present"} /></td>
+                        <td className="tnum whitespace-nowrap px-4 py-2.5 text-end text-neutral-500">
                           {new Date(p.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                         </td>
+                        {!ended && (
+                          <td className="whitespace-nowrap px-2 py-2.5 text-end">
+                            <button onClick={() => unmark(p.id)} className="min-h-[40px] rounded px-2 text-sm font-semibold text-brick hover:underline">{t.unmark}</button>
+                            <button onClick={() => flagStudent(p.student_id)} className="min-h-[40px] rounded px-2 text-sm font-semibold text-hi-dark hover:underline dark:text-amber-300">{t.flagStudent}</button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -164,6 +224,13 @@ export default function SessionLive({ params }: { params: { id: string } }) {
                 <h3 className="font-display text-lg font-bold">{t.manualMark}</h3>
                 <div className="mt-2 grid gap-2">
                   <div><Label>Student ID</Label><Input placeholder="uuid" value={manual.student_id} onChange={e => setManual({ ...manual, student_id: e.target.value })} /></div>
+                  <div><Label>{t.status}</Label>
+                    <select value={manual.status} onChange={e => setManual({ ...manual, status: e.target.value })} className="min-h-[48px] w-full rounded-md2 border-2 border-black/15 bg-paper px-4 outline-none focus:border-register dark:border-white/20 dark:bg-white/5">
+                      <option value="present">present</option>
+                      <option value="late">late</option>
+                      <option value="excused">excused</option>
+                    </select>
+                  </div>
                   <div><Label>{t.manualReason}</Label><Input placeholder={t.manualHint} value={manual.reason} onChange={e => setManual({ ...manual, reason: e.target.value })} /></div>
                   <Button type="submit" disabled={!manual.student_id || !manual.reason}>{t.manualMark}</Button>
                 </div>

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { scanSchema } from "@/lib/validators";
 import { verifyQrToken } from "@/lib/qr-token";
-import { haversineM, clientIp } from "@/lib/geo";
+import { haversineM, clientIp, ipAllowed } from "@/lib/geo";
 import { rateLimit } from "@/lib/rate-limit";
+import { effective, asNum, asBool } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +58,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", code: "expired_code", message: "Code expired — scan the live QR again" }, { status: 400 });
     }
     const now = new Date();
+    if (session.status === "paused") {
+      await flag(session.id, "session_paused", {});
+      return NextResponse.json({ status: "error", code: "session_paused", message: "Session is paused" }, { status: 400 });
+    }
     if (session.status !== "active" || new Date(session.ends_at) <= now || new Date(session.starts_at) > now) {
       await flag(session.id, "session_not_active", { status: session.status });
       return NextResponse.json({ status: "error", code: "session_closed", message: "Session is not active" }, { status: 400 });
     }
+
+    // effective anti-cheat + timing settings (session > course > global)
+    const SET_KEYS = ["present_within_min", "late_after_min", "grace_period_min", "allow_late_scanning", "device_binding_on", "campus_ip_allowlist"];
+    const { data: srows } = await svc.from("app_settings").select("scope_type,scope_id,key,value").in("key", SET_KEYS);
+    const relevant = ((srows ?? []) as any[]).filter(r =>
+      r.scope_type === "global" ||
+      (r.scope_type === "course" && r.scope_id === session.course_id) ||
+      (r.scope_type === "session" && r.scope_id === session.id));
+    const eff = <T,>(key: string, fb: T): T => effective(relevant.filter(r => r.key === key), key, fb);
+    const presentWithin = asNum(eff("present_within_min", 10), 10);
+    const lateAfter = asNum(eff("late_after_min", 20), 20);
+    const grace = asNum(eff("grace_period_min", 5), 5);
+    const allowLate = asBool(eff("allow_late_scanning", true), true);
+    const deviceOn = asBool(eff("device_binding_on", true), true);
 
     // 3. enrolled?
     const { data: enr } = await svc.from("enrollments").select("id").eq("course_id", session.course_id).eq("student_id", user.id).maybeSingle();
@@ -72,7 +91,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing.scanned_at });
     }
 
-    // 5. device check
+    // 5. device check (skippable by admin setting)
+    if (deviceOn) {
     const { data: dev } = await svc.from("devices").select("*").eq("student_id", user.id).maybeSingle();
     if (!dev) {
       // bind on first success: ensure device not bound to someone else
@@ -82,6 +102,7 @@ export async function POST(req: NextRequest) {
     } else if (dev.device_id !== deviceId) {
       await flag(session.id, "wrong_device", { expected: "bound", got: "other" });
       return NextResponse.json({ status: "error", code: "wrong_device", message: "Wrong device — ask admin to reset your device binding" }, { status: 403 });
+    }
     }
 
     // 6. geofence (soft signal; skippable per session)
@@ -100,9 +121,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 6b. campus IP allowlist (only enforced when the admin configured ranges)
+    const allowRule = eff("campus_ip_allowlist", null);
+    if (!ipAllowed(ip, allowRule)) {
+      await flag(session.id, "outside_campus_ip", { ip });
+      return NextResponse.json({ status: "error", code: "outside_campus", message: "Off-campus network" }, { status: 400 });
+    }
+
+    // 6c. timing verdict (server time): present / late / too late
+    const mins = (Date.now() - new Date(session.starts_at).getTime()) / 60000;
+    let mark: "present" | "late" = "present";
+    if (mins > presentWithin + grace) {
+      if (allowLate && mins <= lateAfter + grace) mark = "late";
+      else {
+        await flag(session.id, "late_scan", { mins: Math.round(mins) });
+        return NextResponse.json({ status: "error", code: "too_late", message: "Scanning window ended" }, { status: 400 });
+      }
+    }
+
     // 7. insert + audit (unique constraint guards races)
     const { data: rec, error: insErr } = await svc.from("attendance_records")
-      .insert({ session_id: session.id, student_id: user.id, method: "scan", status: "present" })
+      .insert({ session_id: session.id, student_id: user.id, method: "scan", status: mark })
       .select().single();
     if (insErr) {
       if (insErr.code === "23505") {
@@ -112,7 +151,7 @@ export async function POST(req: NextRequest) {
     }
     await svc.from("audit_logs").insert({ actor_id: user.id, action: "scan_present", entity_type: "attendance_session", entity_id: session.id, metadata: { device: deviceId, ip } });
 
-    return NextResponse.json({ status: "success", code: "marked", message: "Marked present", course: (session as any).courses, time: rec.scanned_at });
+    return NextResponse.json({ status: "success", code: mark === "late" ? "marked_late" : "marked", message: mark === "late" ? "Marked late" : "Marked present", course: (session as any).courses, time: rec.scanned_at });
   } catch (e: any) {
     return NextResponse.json({ status: "error", code: "server_error", message: "Server error, try again" }, { status: 500 });
   }
