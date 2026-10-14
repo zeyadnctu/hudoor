@@ -22,10 +22,11 @@ export const onboardingSchema = z.object({
   full_name_ar: z.string().min(2),
   full_name_en: z.string().min(2),
   university_id: z.string().min(2).max(32),
-  faculty_id: z.string().uuid(),
-  department_id: z.string().uuid(),
-  level_year: z.number().int().min(1).max(7),
-  section_group: z.string().min(1).max(32),
+  program_id: z.string().uuid(),
+  level_id: z.string().uuid(),
+  section_id: z.string().uuid(),
+  level_year: z.number().int().min(1).max(12).optional(),
+  section_group: z.string().min(1).max(32).optional(),
   phone: z.string().min(5).max(24)
 });
 

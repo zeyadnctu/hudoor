@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useApp } from "@/components/providers";
 import { Button, Input, Select, Label, StatusPill } from "@/components/ui";
 import { browserSupabase } from "@/lib/supabase";
+import { useMyProgram } from "@/lib/programs";
 import { Plus } from "lucide-react";
 
 export default function ProfSessionsPage() {
@@ -13,6 +14,12 @@ export default function ProfSessionsPage() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [show, setShow] = useState(false);
   const [msg, setMsg] = useState("");
+  const [allProfs, setAllProfs] = useState<any[]>([]);
+  const [occ, setOcc] = useState<any>(null);
+  const [occForm, setOccForm] = useState({ starts_at: "", ends_at: "", substitute: "" });
+  const { programId, programs } = useMyProgram();
+  const [progFilter, setProgFilter] = useState("");
+  const visibleCourses = progFilter ? courses.filter(c => (c as any).program_id === progFilter) : courses;
   const [form, setForm] = useState({
     course_id: "", mode: "now", starts_at: "", duration_min: 60,
     recurring: false, recurring_until: "", room_id: "",
@@ -24,7 +31,7 @@ export default function ProfSessionsPage() {
     const sb = browserSupabase();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
-    const { data: cp } = await sb.from("course_professors").select("course_id,courses(id,code,name_ar)").eq("professor_id", user.id);
+    const { data: cp } = await sb.from("course_professors").select("course_id,courses(id,code,name_ar,program_id)").eq("professor_id", user.id);
     const cs = ((cp ?? []) as any[]).map(x => x.courses);
     setCourses(cs);
     if (cs[0] && !form.course_id) setForm(f => ({ ...f, course_id: cs[0].id }));
@@ -34,8 +41,31 @@ export default function ProfSessionsPage() {
     setSessions((s ?? []) as any[]);
     const { data: r } = await sb.from("rooms").select("id,name_ar").limit(200);
     setRooms((r ?? []) as any[]);
+    const { data: ap } = await sb.from("profiles").select("id,email").eq("role", "professor").eq("status", "approved").limit(200);
+    setAllProfs((ap ?? []) as any[]);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  async function occOp(op: string) {
+    if (!occ) return;
+    setMsg("");
+    let url = `/api/sessions?id=${occ.id}&op=${op}`;
+    let body: any = undefined;
+    if (op === "reschedule") {
+      if (!occForm.starts_at || !occForm.ends_at) { setMsg(t.reschedule); return; }
+      body = { starts_at: new Date(occForm.starts_at).toISOString(), ends_at: new Date(occForm.ends_at).toISOString() };
+    }
+    if (op === "substitute") {
+      if (!occForm.substitute) return;
+      url += `&professor_id=${occForm.substitute}`;
+    }
+    if (op === "cancel" && !confirm(t.cancelSession + "?")) return;
+    const r = await fetch(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setMsg(j.error ?? "error"); return; }
+    setOcc(null);
+    load();
+  }
 
   async function submit() {
     setMsg("");
@@ -79,9 +109,17 @@ export default function ProfSessionsPage() {
       {show && (
         <div className="mt-3 rounded-md2 border border-black/10 p-4 dark:border-white/15">
           <div className="grid gap-2">
+            {programs.length > 1 && (
+              <div><Label>{t.myProgram}</Label>
+                <Select value={progFilter} onChange={e => setProgFilter(e.target.value)}>
+                  <option value="">{t.allPrograms}</option>
+                  {programs.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+                </Select>
+              </div>
+            )}
             <div><Label>{t.course}</Label>
               <Select value={form.course_id} onChange={e => setForm({ ...form, course_id: e.target.value })}>
-                <option value="">—</option>{courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
+                <option value="">—</option>{visibleCourses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
               </Select>
             </div>
             <div><Label>Mode</Label>
@@ -124,18 +162,50 @@ export default function ProfSessionsPage() {
 
       <div className="mt-4 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
         {sessions.length === 0 && <p className="p-4 text-neutral-500">—</p>}
-        {sessions.map(s => (
-          <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-            <div>
-              <Link href={`/professor/session/${s.id}`} className="tnum font-display font-semibold text-register hover:underline">
-                {s.courses?.code}
-              </Link>
-              <span className="tnum ms-2 text-sm text-neutral-500">{new Date(s.starts_at).toLocaleString()}{s.source !== "manual" ? ` · ${s.source}` : ""}</span>
+        {sessions.map(s => {
+          const future = new Date(s.starts_at).getTime() > Date.now() && s.status !== "active" && s.status !== "ended";
+          return (
+            <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div>
+                <Link href={`/professor/session/${s.id}`} className="tnum font-display font-semibold text-register hover:underline">
+                  {s.courses?.code}
+                </Link>
+                <span className="tnum ms-2 text-sm text-neutral-500">{new Date(s.starts_at).toLocaleString()}{s.source !== "manual" ? ` · ${s.source}` : ""}</span>
+              </div>
+              <span className="flex items-center gap-1">
+                {future && s.status !== "cancelled" && (
+                  <button onClick={() => { setOcc(s); setOccForm({ starts_at: "", ends_at: "", substitute: "" }); }} className="min-h-[40px] rounded px-2 text-sm font-semibold text-register hover:underline">Edit</button>
+                )}
+                <StatusPill status={s.status} />
+              </span>
             </div>
-            <StatusPill status={s.status} />
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {occ && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4" onClick={() => setOcc(null)}>
+          <div className="w-full max-w-md rounded-lg2 bg-paper p-5 dark:bg-inksurface" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h2 className="font-display text-xl font-bold">{t.reschedule} / {t.substitute}</h2>
+            <p className="tnum mt-1 text-sm text-neutral-500">{new Date(occ.starts_at).toLocaleString()}</p>
+            <div className="mt-3 grid gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Starts</Label><Input type="datetime-local" value={occForm.starts_at} onChange={e => setOccForm({ ...occForm, starts_at: e.target.value })} /></div>
+                <div><Label>Ends</Label><Input type="datetime-local" value={occForm.ends_at} onChange={e => setOccForm({ ...occForm, ends_at: e.target.value })} /></div>
+              </div>
+              <Button variant="outline" disabled={!occForm.starts_at || !occForm.ends_at} onClick={() => occOp("reschedule")}>{t.reschedule}</Button>
+              <div><Label>{t.substitute}</Label>
+                <Select value={occForm.substitute} onChange={e => setOccForm({ ...occForm, substitute: e.target.value })}>
+                  <option value="">—</option>
+                  {allProfs.map((p: any) => <option key={p.id} value={p.id}>{p.email}</option>)}
+                </Select>
+              </div>
+              <Button variant="outline" disabled={!occForm.substitute} onClick={() => occOp("substitute")}>{t.substitute}</Button>
+              <Button variant="brick" onClick={() => occOp("cancel")}>{t.cancelSession}</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -4,6 +4,8 @@ import { useApp } from "@/components/providers";
 import { Button, Input, Label } from "@/components/ui";
 import { CrudPage } from "@/components/console/CrudPage";
 import { AssignPicker, type AssignItem } from "@/components/console/AssignPicker";
+import { Select } from "@/components/ui";
+import { useMyProgram, orderPrograms } from "@/lib/programs";
 import { browserSupabase } from "@/lib/supabase";
 
 function CourseDetail({ row, close, refresh }: { row: any; close: () => void; refresh: () => void }) {
@@ -102,13 +104,25 @@ function CourseDetail({ row, close, refresh }: { row: any; close: () => void; re
 export default function CoursesPage() {
   const { t } = useApp();
   const [tick, setTick] = useState(0);
+  const { programId, programs, isAdmin } = useMyProgram();
+  const [prog, setProg] = useState("");
+  useEffect(() => { if (programId && !isAdmin) setProg(programId); }, [programId, isAdmin]);
   return (
     <div>
-      <h1 className="font-display text-3xl font-bold">{t.courses}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="font-display text-3xl font-bold">{t.courses}</h1>
+        {(isAdmin || programs.length > 1) && (
+          <div className="w-56"><Select value={prog} onChange={e => setProg(e.target.value)} aria-label={t.programs}>
+            {isAdmin && <option value="">{t.allPrograms}</option>}
+            {programs.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+          </Select></div>
+        )}
+      </div>
       <div className="mt-4">
         <CrudPage
-          key={tick}
+          key={`${tick}:${prog}`}
           resource="courses"
+          filters={prog ? { program_id: prog } : undefined}
           columns={[
             { key: "code", label: "Code", sortable: true },
             { key: "name_ar", label: "Name (AR)", sortable: true },

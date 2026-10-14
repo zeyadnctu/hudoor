@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/providers";
+import { useMyProgram } from "@/lib/programs";
 import { Button, Input, Select, Label, StatusPill } from "@/components/ui";
 import { ConfirmDialog } from "@/components/console/ConfirmDialog";
 
@@ -8,6 +9,14 @@ export default function AttendancePage() {
   const { t } = useApp();
   const [courses, setCourses] = useState<any[]>([]);
   const [f, setF] = useState({ course_id: "", from: "", to: "", status: "", session_id: "" });
+  const { programId, programs, isAdmin } = useMyProgram();
+  const [prog, setProg] = useState("");
+  useEffect(() => { if (programId && !isAdmin) setProg(programId); }, [programId, isAdmin]);
+  const visibleCourses = prog ? courses.filter(c => (c as any).program_id === prog) : courses;
+  useEffect(() => {
+    if (prog && f.course_id && !visibleCourses.some(c => c.id === f.course_id)) setF(s => ({ ...s, course_id: "" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prog]);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -80,10 +89,18 @@ export default function AttendancePage() {
 
       {tab === "records" ? (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
+            {(isAdmin || programs.length > 1) && (
+              <div><Label>{t.programs}</Label>
+                <Select value={prog} onChange={e => setProg(e.target.value)}>
+                  {isAdmin && <option value="">{t.allPrograms}</option>}
+                  {programs.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}
+                </Select>
+              </div>
+            )}
             <div><Label>{t.course}</Label>
               <Select value={f.course_id} onChange={e => setF({ ...f, course_id: e.target.value })}>
-                <option value="">{t.all}</option>{courses.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
+                <option value="">{t.all}</option>{visibleCourses.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}
               </Select>
             </div>
             <div><Label>{t.from}</Label><Input type="date" value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></div>

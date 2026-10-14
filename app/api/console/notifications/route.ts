@@ -8,9 +8,13 @@ export async function GET(req: NextRequest) {
   const gate = await requirePerm(req, "announcements", "view");
   if (!gate.ok) return gate.res;
   const { svc, profile } = gate.ctx;
-  const { data: det } = await svc.from("student_details").select("department_id").eq("user_id", profile.id).maybeSingle();
-  const { data: enr } = await svc.from("enrollments").select("course_id").eq("student_id", profile.id);
+  const { data: det } = await svc.from("student_details").select("department_id,program_id").eq("user_id", profile.id).maybeSingle();
+  const { data: enr } = await svc.from("enrollments").select("course_id,courses!inner(program_id)").eq("student_id", profile.id);
   const myCourses = ((enr ?? []) as any[]).map(e => e.course_id);
+  const myPrograms = new Set<string>([
+    ...(((enr ?? []) as any[]).map(e => (e as any).courses?.program_id).filter(Boolean)),
+    ...((det as any)?.program_id ? [(det as any).program_id] : [])
+  ]);
   const { data, error } = await svc.from("announcements")
     .select("id,title_ar,title_en,body_ar,body_en,created_at,author_id,audience").is("deleted_at", null)
     .order("created_at", { ascending: false }).limit(50);
@@ -20,8 +24,9 @@ export async function GET(req: NextRequest) {
     const au = a.audience ?? {};
     if ((au.roles ?? []).includes(profile.role)) return true;
     if ((au.course_ids ?? []).some((c: string) => myCourses.includes(c))) return true;
+    if ((au.program_ids ?? []).some((p: string) => myPrograms.has(p))) return true;
     if (det && (au.department_ids ?? []).includes((det as any).department_id)) return true;
-    if (!(au.roles ?? []).length && !(au.course_ids ?? []).length && !(au.department_ids ?? []).length) return true; // broadcast
+    if (!(au.roles ?? []).length && !(au.course_ids ?? []).length && !(au.program_ids ?? []).length && !(au.department_ids ?? []).length) return true; // broadcast
     return false;
   });
   return NextResponse.json({ rows });
@@ -37,6 +42,7 @@ export async function POST(req: NextRequest) {
   const au = {
     roles: audience?.roles ?? [],
     course_ids: audience?.course_ids ?? [],
+    program_ids: audience?.program_ids ?? [],
     department_ids: audience?.department_ids ?? [],
     sections: audience?.sections ?? []
   };

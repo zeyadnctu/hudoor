@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsc lib/permissions.ts lib/settings.ts lib/match.ts lib/timetable.ts --outDir .testbuild --module nodenext --target es2020 --skipLibCheck && node --test tests/*.test.mjs"
+    "test": "tsc lib/permissions.ts lib/settings.ts lib/match.ts lib/timetable.ts lib/ntg-parse.ts lib/recurrence.ts --outDir .testbuild --module nodenext --target es2020 --skipLibCheck && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.6.0",

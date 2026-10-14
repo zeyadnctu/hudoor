@@ -2,26 +2,27 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/providers";
 import { Button, Input, Label } from "@/components/ui";
+import { orderPrograms } from "@/lib/programs";
 
 export default function NotificationsPage() {
   const { t } = useApp();
   const [courses, setCourses] = useState<any[]>([]);
-  const [depts, setDepts] = useState<any[]>([]);
+  const [progs, setProgs] = useState<any[]>([]);
   const [sent, setSent] = useState<any[]>([]);
   const [f, setF] = useState({
     title_ar: "", title_en: "", body_ar: "", body_en: "",
-    roles: [] as string[], course_ids: [] as string[], department_ids: [] as string[]
+    roles: [] as string[], course_ids: [] as string[], program_ids: [] as string[], department_ids: [] as string[]
   });
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     (async () => {
-      const [c, d, s] = await Promise.all([
+      const [c, p, s] = await Promise.all([
         fetch("/api/console/courses?perPage=500").then(r => r.json()),
-        fetch("/api/console/departments?perPage=500").then(r => r.json()),
+        fetch("/api/console/programs?perPage=500").then(r => r.json()),
         fetch("/api/console/notifications").then(r => r.json()).catch(() => ({ rows: [] }))
       ]);
-      setCourses(c.rows ?? []); setDepts(d.rows ?? []); setSent(s.rows ?? []);
+      setCourses(c.rows ?? []); setProgs(orderPrograms(p.rows ?? [])); setSent(s.rows ?? []);
     })();
   }, []);
 
@@ -37,13 +38,13 @@ export default function NotificationsPage() {
       body: JSON.stringify({
         title_ar: f.title_ar, title_en: f.title_en || f.title_ar,
         body_ar: f.body_ar, body_en: f.body_en || f.body_ar,
-        audience: { roles: f.roles, course_ids: f.course_ids, department_ids: f.department_ids, sections: [] }
+        audience: { roles: f.roles, course_ids: f.course_ids, program_ids: f.program_ids, department_ids: [], sections: [] }
       })
     });
     const j = await r.json();
     if (!r.ok) { setMsg(j.error); return; }
     setMsg(`✓ ${t.createdOk}`);
-    setF({ title_ar: "", title_en: "", body_ar: "", body_en: "", roles: [], course_ids: [], department_ids: [] });
+    setF({ title_ar: "", title_en: "", body_ar: "", body_en: "", roles: [], course_ids: [], program_ids: [], department_ids: [] });
     const s = await fetch("/api/console/notifications").then(x => x.json()).catch(() => ({ rows: [] }));
     setSent(s.rows ?? []);
   }
@@ -85,10 +86,12 @@ export default function NotificationsPage() {
               ))}
             </div>
           </div>
-          <div><p className="mb-1 text-sm font-semibold">{t.targetDepts}</p>
+          <div><p className="mb-1 text-sm font-semibold">{t.programs}</p>
             <div className="flex flex-wrap gap-1.5">
-              {depts.map(d => (
-                <button key={d.id} type="button" aria-pressed={f.department_ids.includes(d.id)} onClick={() => setF({ ...f, department_ids: toggle(f.department_ids, d.id) })} className={chip(f.department_ids.includes(d.id))}>{d.name_ar}</button>
+              {progs.map(p => (
+                <button key={p.id} type="button" aria-pressed={f.program_ids.includes(p.id)} onClick={() => setF({ ...f, program_ids: toggle(f.program_ids, p.id) })} className={chip(f.program_ids.includes(p.id))}>
+                  <span className="me-1 inline-block h-2.5 w-2.5 rounded-full" style={{ background: p.color || "#2F5D8A" }} />{p.code}
+                </button>
               ))}
             </div>
           </div>

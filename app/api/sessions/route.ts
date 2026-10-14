@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/sessions?id=&op=end|pause|resume|extend|duplicate (default end)
+// PATCH /api/sessions?id=&op=end|pause|resume|extend|duplicate|cancel|reschedule|substitute
 export async function PATCH(req: NextRequest) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
@@ -135,6 +135,24 @@ export async function PATCH(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await audit(svc, user.id, "session_duplicate", "attendance_session", dup.id, { from: id });
     return NextResponse.json(dup);
+  } else if (op === "cancel") {
+    if ((s as any).status === "active") return NextResponse.json({ error: "bad_state" }, { status: 400 });
+    await svc.from("attendance_sessions").update({ status: "cancelled" }).eq("id", id);
+  } else if (op === "reschedule") {
+    if ((s as any).status === "active") return NextResponse.json({ error: "bad_state" }, { status: 400 });
+    const body = await req.json().catch(() => ({} as any));
+    const starts_at = url.searchParams.get("starts_at") ?? body.starts_at;
+    const ends_at = url.searchParams.get("ends_at") ?? body.ends_at;
+    if (!starts_at || !ends_at || isNaN(+new Date(starts_at)) || isNaN(+new Date(ends_at)) || starts_at >= ends_at)
+      return NextResponse.json({ error: "bad_time" }, { status: 400 });
+    await svc.from("attendance_sessions").update({ starts_at, ends_at }).eq("id", id);
+  } else if (op === "substitute") {
+    const sub = url.searchParams.get("professor_id");
+    if (!sub || !/^[0-9a-f-]{36}$/i.test(sub)) return NextResponse.json({ error: "invalid" }, { status: 400 });
+    const { data: sp } = await svc.from("profiles").select("id,role,status").eq("id", sub).single();
+    if (!sp || (sp as any).role !== "professor" || (sp as any).status !== "approved")
+      return NextResponse.json({ error: "bad_professor" }, { status: 400 });
+    await svc.from("attendance_sessions").update({ substitute_professor_id: sub }).eq("id", id);
   } else {
     return NextResponse.json({ error: "bad_op" }, { status: 400 });
   }

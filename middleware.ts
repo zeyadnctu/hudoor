@@ -56,7 +56,7 @@ export async function middleware(req: NextRequest) {
     const va = await viewAs(req);
     const effRole = va ? va.role : role;
 
-    if (guard("/admin") && !(role === "admin" || (custom !== null && custom !== "ta"))) {
+    if (guard("/admin") && !(role === "admin" || role === "coordinator" || (custom !== null && custom !== "ta"))) {
       const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
     }
     if (guard("/professor") && !(effRole === "professor" || effRole === "admin" || effRole === "ta")) {

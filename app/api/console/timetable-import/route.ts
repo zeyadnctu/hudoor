@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePerm, auditDiff } from "@/lib/guard";
+import { requirePerm, auditDiff, myPrograms, inProgramScope } from "@/lib/guard";
 import { extractTimetable, type ParsedRow } from "@/lib/timetable-pdf";
 import { bestMatches } from "@/lib/match";
 import { detectClashes, expandSemester, type Slot } from "@/lib/timetable";
@@ -101,6 +101,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "bad_state" }, { status: 400 });
 
   const clean = (rows ?? []).filter(r => r.course_id && r.day !== "" && r.starts_at && r.ends_at);
+  // program scope (coordinators): every row must belong to an in-scope program
+  {
+    const scope = await myPrograms(svc, gate.ctx.profile);
+    if (scope !== null) {
+      const cids = [...new Set(clean.map((r: any) => r.course_id))];
+      const progOf: Record<string, string | null> = {};
+      if (cids.length) {
+        const { data: cs } = await svc.from("courses").select("id,program_id").in("id", cids);
+        for (const c of (cs ?? []) as any[]) progOf[c.id] = c.program_id ?? null;
+      }
+      const bad = clean.filter((r: any) => !inProgramScope(scope, r.program_id ?? progOf[r.course_id] ?? null));
+      if (bad.length) return NextResponse.json({ error: "not_your_program" }, { status: 403 });
+    }
+  }
   // clash report across existing + new
   const semId = clean[0]?.semester_id ?? null;
   let existing: any[] = [];
@@ -121,7 +135,12 @@ export async function PATCH(req: NextRequest) {
       semester_id: r.semester_id, course_id: r.course_id,
       professor_id: r.professor_id || null, room_id: r.room_id || null,
       section: r.section || "A", group_name: r.group || "",
-      day: Number(r.day), starts_at: r.starts_at, ends_at: r.ends_at, import_id: id
+      day: Number(r.day), starts_at: r.starts_at, ends_at: r.ends_at, import_id: id,
+      program_id: r.program_id ?? null, level_id: r.level_id ?? null, group_id: r.group_id ?? null,
+      session_type: r.session_type ?? null, instructor_id: r.instructor_id ?? r.professor_id ?? null,
+      instructor_name: r.instructor_name ?? null,
+      start_period: r.start_period ?? null, period_count: r.period_count ?? 1,
+      source: "import", source_ref: id
     }).select("id").single();
     if (!error && data) slotIds.push((data as any).id);
   }

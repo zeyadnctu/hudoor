@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { course_id, refs, section, bulk } = body as {
     course_id: string; refs?: string[]; section?: string;
-    bulk?: { department_id?: string; level_id?: string };
+    bulk?: { department_id?: string; level_id?: string; program_id?: string };
   };
   if (!course_id) return NextResponse.json({ error: "course_required" }, { status: 400 });
   const gate = await requirePerm(req, "enrollments", "create", { courseId: course_id });
@@ -63,10 +63,11 @@ export async function POST(req: NextRequest) {
   const { svc } = gate.ctx;
 
   let targets: string[] = refs ?? [];
-  if (bulk?.department_id || bulk?.level_id) {
+  if (bulk?.department_id || bulk?.level_id || bulk?.program_id) {
     let dq = svc.from("student_details").select("user_id");
     if (bulk.department_id) dq = dq.eq("department_id", bulk.department_id);
     if (bulk.level_id) dq = dq.eq("level_id", bulk.level_id);
+    if (bulk.program_id) dq = dq.eq("program_id", bulk.program_id);
     const { data } = await dq.limit(2000);
     targets = [...targets, ...((data ?? []) as any[]).map(d => d.user_id)];
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePerm, auditDiff } from "@/lib/guard";
+import { requirePerm, auditDiff, myPrograms, inProgramScope } from "@/lib/guard";
 import { RESOURCES } from "@/lib/resources";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +76,11 @@ export async function POST(req: NextRequest, { params }: { params: { resource: s
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
+  if (params.resource === "courses" && values.program_id) {
+    const scope = await myPrograms(svc, gate.ctx.profile);
+    if (!inProgramScope(scope, values.program_id))
+      return NextResponse.json({ error: "not_your_program" }, { status: 403 });
+  }
   const { data, error } = await svc.from(def.table).insert(values).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   await auditDiff(svc, gate.ctx.profile.id, `${params.resource}.create`, def.table, String(data[def.pk ?? "id"] ?? data.id), null, data, {}, gate.ctx);
@@ -99,6 +104,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { resource: 
     return NextResponse.json({ error: e.message }, { status: 400 });
   }
   const { data: before } = await svc.from(def.table).select("*").eq(def.pk ?? "id", id).single();
+  if (!before) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (params.resource === "courses") {
+    const effProg = (values as any).program_id ?? (before as any).program_id ?? null;
+    const scope = await myPrograms(svc, gate.ctx.profile);
+    if (!inProgramScope(scope, effProg))
+      return NextResponse.json({ error: "not_your_program" }, { status: 403 });
+  }
   const { data, error } = await svc.from(def.table).update(values).eq(def.pk ?? "id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   await auditDiff(svc, gate.ctx.profile.id, `${params.resource}.edit`, def.table, id, before, data, {}, gate.ctx);

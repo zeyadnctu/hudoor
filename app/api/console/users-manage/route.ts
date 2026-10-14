@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePerm, auditDiff } from "@/lib/guard";
+import { requirePerm, auditDiff, myPrograms } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,27 @@ export async function GET(req: NextRequest) {
   if (search) query = query.ilike("email", `%${search}%`);
 
   if (profile.role !== "admin") {
+    const isCoord = profile.role === "coordinator" || (profile as any).custom_role === "program_coordinator";
+    if (isCoord) {
+      // coordinators: students + instructors inside their programs only
+      const scope = await myPrograms(svc, profile as any);
+      const progIds = scope ?? [];
+      const { data: det } = await svc.from("student_details").select("user_id").in("program_id", progIds.length ? progIds : ["00000000-0000-0000-0000-000000000000"]);
+      const sids = new Set(((det ?? []) as any[]).map(d => d.user_id));
+      const { data: cs } = await svc.from("courses").select("id").in("program_id", progIds.length ? progIds : ["00000000-0000-0000-0000-000000000000"]);
+      const ccids = ((cs ?? []) as any[]).map(c => c.id);
+      let pids: string[] = [];
+      if (ccids.length) {
+        const [cp, ct] = await Promise.all([
+          svc.from("course_professors").select("professor_id").in("course_id", ccids),
+          svc.from("course_tas").select("ta_id").in("course_id", ccids)
+        ]);
+        pids = [...((cp.data ?? []) as any[]).map(r => r.professor_id), ...((ct.data ?? []) as any[]).map(r => r.ta_id)];
+      }
+      const allow = new Set([...sids, ...pids, profile.id]);
+      if (!allow.size) return NextResponse.json({ rows: [], total: 0 });
+      query = query.in("id", [...allow]);
+    } else {
     // professors/TAs: only students of their own courses
     const [cp, tas] = await Promise.all([
       svc.from("course_professors").select("course_id").eq("professor_id", profile.id),
@@ -41,6 +62,7 @@ export async function GET(req: NextRequest) {
     const sids = [...new Set(((enr ?? []) as any[]).map(e => e.student_id))];
     if (!sids.length) return NextResponse.json({ rows: [], total: 0 });
     query = query.in("id", sids);
+    }
   }
   const { data, error, count } = await query.order("created_at", { ascending: false }).range((page - 1) * perPage, page * perPage - 1);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -32,7 +32,14 @@ export default function ProgramsPage() {
           columns={[
             { key: "code", label: "Code", sortable: true },
             { key: "name_ar", label: "Name (AR)", sortable: true },
-            { key: "name_en", label: "Name (EN)" }
+            { key: "name_en", label: "Name (EN)" },
+            { key: "type", label: "Type", render: (r: any) => (
+              <span className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-full" style={{ background: r.color || "#2F5D8A" }} />
+                {r.type}{r.partner ? ` · ${r.partner}` : ""}
+                {r.archived ? " (archived)" : ""}
+              </span>
+            ) }
           ]}
         />
       </div>

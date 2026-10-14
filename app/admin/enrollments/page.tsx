@@ -2,13 +2,14 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/components/providers";
 import { Button, Input, Select, Label } from "@/components/ui";
+import { useMyProgram, orderPrograms } from "@/lib/programs";
 import { ConfirmDialog } from "@/components/console/ConfirmDialog";
 import { Trash2, UserPlus } from "lucide-react";
 
 export default function EnrollmentsPage() {
   const { t } = useApp();
   const [courses, setCourses] = useState<any[]>([]);
-  const [depts, setDepts] = useState<any[]>([]);
+  const [progs, setProgs] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [course, setCourse] = useState("");
   const [section, setSection] = useState("");
@@ -17,18 +18,29 @@ export default function EnrollmentsPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [confirm, setConfirm] = useState(false);
   const [msg, setMsg] = useState("");
-  const [add, setAdd] = useState({ refs: "", section: "A", dept: "", level: "" });
+  const [add, setAdd] = useState({ refs: "", section: "A", prog: "", level: "" });
   const [conflicts, setConflicts] = useState<any[]>([]);
+  const { programId, programs, isAdmin } = useMyProgram();
+  const [progFilter, setProgFilter] = useState("");
+
+  useEffect(() => { if (programId && !isAdmin) setProgFilter(programId); }, [programId, isAdmin]);
+  const visibleCourses = progFilter ? courses.filter(c => (c as any).program_id === progFilter) : courses;
+  useEffect(() => {
+    if (progFilter && course && !visibleCourses.some(c => c.id === course)) {
+      setCourse(visibleCourses[0]?.id ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progFilter]);
 
   useEffect(() => {
     (async () => {
-      const [c, d, l] = await Promise.all([
+      const [c, p, l] = await Promise.all([
         fetch("/api/console/courses?perPage=500").then(r => r.json()),
-        fetch("/api/console/departments?perPage=500").then(r => r.json()),
+        fetch("/api/console/programs?perPage=500").then(r => r.json()),
         fetch("/api/console/levels?perPage=500").then(r => r.json())
       ]);
       setCourses(c.rows ?? []);
-      setDepts(d.rows ?? []);
+      setProgs(orderPrograms(p.rows ?? []));
       setLevels(l.rows ?? []);
       if ((c.rows ?? [])[0]) setCourse(c.rows[0].id);
     })();
@@ -52,14 +64,14 @@ export default function EnrollmentsPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         course_id: course, refs, section: add.section,
-        bulk: { department_id: add.dept || undefined, level_id: add.level || undefined }
+        bulk: { program_id: add.prog || undefined, level_id: add.level || undefined }
       })
     });
     const j = await r.json();
     if (!r.ok) { setMsg(j.error); return; }
     setMsg(`✓ enrolled ${j.enrolled.length}${j.missing.length ? `, missing: ${j.missing.slice(0, 5).join("; ")}` : ""}`);
     setConflicts(j.conflicts ?? []);
-    setAdd({ refs: "", section: "A", dept: "", level: "" });
+    setAdd({ refs: "", section: "A", prog: "", level: "" });
     load();
   }
   async function doRemove() {
@@ -75,10 +87,18 @@ export default function EnrollmentsPage() {
   return (
     <div>
       <h1 className="font-display text-3xl font-bold">{t.enrollments}</h1>
+      {(isAdmin || programs.length > 1) && (
+        <div className="mt-3 max-w-sm"><Label>{t.myProgram}</Label>
+          <Select value={progFilter} onChange={e => setProgFilter(e.target.value)}>
+            {isAdmin && <option value="">{t.allPrograms}</option>}
+            {programs.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name_ar}</option>)}
+          </Select>
+        </div>
+      )}
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <div><Label>{t.course}</Label>
           <Select value={course} onChange={e => setCourse(e.target.value)}>
-            {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
+            {visibleCourses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
           </Select>
         </div>
         <div><Label>{t.section}</Label>
@@ -148,9 +168,9 @@ export default function EnrollmentsPage() {
                 <option value="A">A</option><option value="B">B</option><option value="C">C</option>
               </Select>
             </div>
-            <div><Label>{t.department}</Label>
-              <Select value={add.dept} onChange={e => setAdd({ ...add, dept: e.target.value })}>
-                <option value="">—</option>{depts.map(d => <option key={d.id} value={d.id}>{d.name_ar}</option>)}
+            <div><Label>{t.programs}</Label>
+              <Select value={add.prog} onChange={e => setAdd({ ...add, prog: e.target.value })}>
+                <option value="">—</option>{progs.map(p => <option key={p.id} value={p.id}>{p.code} · {p.name_ar}</option>)}
               </Select>
             </div>
             <div><Label>Level</Label>

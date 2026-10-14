@@ -5,16 +5,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { useApp } from "@/components/providers";
 import { browserSupabase } from "@/lib/supabase";
 import {
-  LayoutDashboard, Users, Building2, GraduationCap, BookOpen, UserCheck,
+  LayoutDashboard, Users, GraduationCap, BookOpen, UserCheck,
   MapPin, CalendarDays, CalendarRange, ClipboardList, Inbox, ScrollText,
-  Flag, Megaphone, Settings, Trash2, Menu, X, Search, LogOut, Eye
+  Flag, Megaphone, Settings, Trash2, Menu, X, Search, LogOut, Eye, MailPlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/admin", icon: LayoutDashboard, key: "overview", exact: true },
   { href: "/admin/users", icon: Users, key: "users" },
-  { href: "/admin/faculties", icon: Building2, key: "faculties" },
+  { href: "/admin/invites", icon: MailPlus, key: "newInvite" },
   { href: "/admin/programs", icon: GraduationCap, key: "programs" },
   { href: "/admin/courses", icon: BookOpen, key: "courses" },
   { href: "/admin/enrollments", icon: UserCheck, key: "enrollments" },
@@ -31,7 +31,7 @@ const NAV = [
 ];
 
 const TITLES: Record<string, string> = {
-  "/admin": "overview", "/admin/users": "users", "/admin/faculties": "faculties",
+  "/admin": "overview", "/admin/users": "users", "/admin/invites": "newInvite", "/admin/faculties": "faculties",
   "/admin/programs": "programs", "/admin/courses": "courses",
   "/admin/enrollments": "enrollments", "/admin/rooms": "rooms",
   "/admin/timetable": "timetable", "/admin/semesters": "semesters",

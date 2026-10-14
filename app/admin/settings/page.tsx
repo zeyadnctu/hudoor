@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useApp } from "@/components/providers";
 import { Button, Select, Label } from "@/components/ui";
 import { SettingsField, type SettingSpec } from "@/components/console/SettingsField";
+import { PeriodGridEditor } from "@/components/console/PeriodGridEditor";
 
 const GROUPS: { title: string; specs: SettingSpec[] }[] = [
   {
@@ -45,7 +46,7 @@ const GROUPS: { title: string; specs: SettingSpec[] }[] = [
 
 export default function SettingsPage() {
   const { t } = useApp();
-  const [tab, setTab] = useState<"values" | "roles" | "flags" | "history">("values");
+  const [tab, setTab] = useState<"values" | "roles" | "flags" | "history" | "timetable">("values");
   const [rows, setRows] = useState<any[]>([]);
   const [effective, setEffective] = useState<Record<string, any>>({});
   const [drafts, setDrafts] = useState<Record<string, any>>({});
@@ -69,7 +70,7 @@ export default function SettingsPage() {
 
   async function loadTargets() {
     if (scope === "global") { setTargets([]); return; }
-    const map: Record<string, string> = { faculty: "faculties", department: "departments", course: "courses", session: "attendance_sessions" };
+    const map: Record<string, string> = { faculty: "faculties", department: "departments", course: "courses", session: "attendance_sessions", program: "programs" };
     const r = await fetch(`/api/console/${map[scope]}?perPage=300`).then(x => x.json()).catch(() => ({ rows: [] }));
     setTargets(r.rows ?? []);
     setScopeId("");
@@ -116,10 +117,10 @@ export default function SettingsPage() {
     <div>
       <h1 className="font-display text-3xl font-bold">{t.settings}</h1>
       <div className="mt-3 flex flex-wrap gap-2">
-        {(["values", "roles", "flags", "history"] as const).map(k => (
+        {(["values", "timetable", "roles", "flags", "history"] as const).map(k => (
           <button key={k} onClick={() => setTab(k)}
             className={`min-h-[48px] rounded-md2 px-4 font-bold ${tab === k ? "bg-ink text-chalk dark:bg-chalk dark:text-ink" : "border border-black/15 dark:border-white/20"}`}>
-            {k === "values" ? t.settings : k === "roles" ? t.rolesMatrix : k === "flags" ? t.featureFlagsList : t.history}
+            {k === "values" ? t.settings : k === "timetable" ? t.timetable : k === "roles" ? t.rolesMatrix : k === "flags" ? t.featureFlagsList : t.history}
           </button>
         ))}
       </div>
@@ -131,6 +132,7 @@ export default function SettingsPage() {
             <div><Label>Scope</Label>
               <Select value={scope} onChange={e => setScope(e.target.value)}>
                 <option value="global">{t.scopeGlobal}</option>
+                <option value="program">{t.programs}</option>
                 <option value="faculty">{t.faculties}</option>
                 <option value="department">{t.department}</option>
                 <option value="course">{t.course}</option>
@@ -179,6 +181,10 @@ export default function SettingsPage() {
             </section>
           )) : <p className="mt-4 text-neutral-500">Pick a target to override {scope} settings.</p>}
         </>
+      )}
+
+      {tab === "timetable" && (
+        <PeriodGridEditor scope={scope} scopeId={scopeId} />
       )}
 
       {tab === "roles" && (

@@ -21,15 +21,17 @@ export default function Onboarding() {
   const { t } = useApp();
   const r = useRouter();
   const [step, setStep] = useState(0);
-  const [facs, setFacs] = useState<any[]>([]);
-  const [deps, setDeps] = useState<any[]>([]);
+  const [progs, setProgs] = useState<any[]>([]);
+  const [levels, setLevels] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [done, setDone] = useState(false);
   const { register, handleSubmit, watch, setValue, trigger, formState: { errors } } = useForm({
     resolver: zodResolver(onboardingSchema) as any,
     defaultValues: (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { return {}; } })()
   });
   const values = watch();
-  const facId = values.faculty_id as string | undefined;
+  const progId = values.program_id as string | undefined;
+  const levelId = values.level_id as string | undefined;
 
   // autosave draft
   useEffect(() => {
@@ -40,18 +42,31 @@ export default function Onboarding() {
   useEffect(() => {
     (async () => {
       const sb = browserSupabase();
-      const { data: f } = await sb.from("faculties").select("*");
-      setFacs(f ?? []);
+      const { data } = await sb.from("programs").select("*").eq("archived", false).order("type", { ascending: false }).order("code");
+      const rows = (data ?? []) as any[];
+      // partner programs first, then the rest by code
+      rows.sort((a, b) => (a.type === b.type ? a.code.localeCompare(b.code) : a.type === "partner" ? -1 : 1));
+      setProgs(rows);
     })();
   }, []);
   useEffect(() => {
-    if (!facId) return;
+    setLevels([]); setGroups([]);
+    if (!progId) return;
     (async () => {
       const sb = browserSupabase();
-      const { data: d } = await sb.from("departments").select("*").eq("faculty_id", facId);
-      setDeps(d ?? []);
+      const { data } = await sb.from("levels").select("*").eq("program_id", progId).order("position");
+      setLevels((data ?? []) as any[]);
     })();
-  }, [facId]);
+  }, [progId]);
+  useEffect(() => {
+    setGroups([]);
+    if (!levelId) return;
+    (async () => {
+      const sb = browserSupabase();
+      const { data } = await sb.from("section_groups").select("*").eq("level_id", levelId).order("name");
+      setGroups((data ?? []) as any[]);
+    })();
+  }, [levelId]);
 
   async function next() {
     const fields = step === 0
@@ -65,7 +80,13 @@ export default function Onboarding() {
     const sb = browserSupabase();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) { r.push("/login"); return; }
-    const { error } = await sb.from("student_details").upsert({ user_id: user.id, ...v, level_year: Number(v.level_year) });
+    const level = levels.find(l => l.id === v.level_id);
+    const group = groups.find(g => g.id === v.section_id);
+    const { error } = await sb.from("student_details").upsert({
+      user_id: user.id, ...v,
+      level_year: Number(level?.position ?? 1),
+      section_group: group?.name ?? "sec1"
+    });
     if (error) return;
     try { localStorage.removeItem(DRAFT_KEY); } catch {}
     setDone(true);
@@ -113,15 +134,26 @@ export default function Onboarding() {
         )}
         {step === 2 && (
           <>
-            <div><Label>{t.faculty}</Label>
-              <Select {...register("faculty_id")}><option value="">—</option>{facs.map(f => <option key={f.id} value={f.id}>{f.name_ar} / {f.name_en}</option>)}</Select>
+            <div><Label>{t.programs}</Label>
+              <Select {...register("program_id")}>
+                <option value="">—</option>
+                {progs.map(p => <option key={p.id} value={p.id}>{p.type === "partner" ? "★ " : ""}{p.code} · {p.name_ar}</option>)}
+              </Select>
+              <FieldError msg={errors.program_id && t.required} />
             </div>
-            <div><Label>{t.department}</Label>
-              <Select {...register("department_id")}><option value="">—</option>{deps.map(d => <option key={d.id} value={d.id}>{d.name_ar} / {d.name_en}</option>)}</Select>
+            <div><Label>{t.level}</Label>
+              <Select {...register("level_id")} disabled={!progId}>
+                <option value="">—</option>
+                {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar} / {l.name_en}</option>)}
+              </Select>
+              <FieldError msg={errors.level_id && t.required} />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>{t.level}</Label><Input type="number" min={1} max={7} {...register("level_year", { valueAsNumber: true })} /></div>
-              <div><Label>{t.section}</Label><Input {...register("section_group")} /></div>
+            <div><Label>{t.group}</Label>
+              <Select {...register("section_id")} disabled={!levelId}>
+                <option value="">—</option>
+                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+              <FieldError msg={errors.section_id && t.required} />
             </div>
           </>
         )}

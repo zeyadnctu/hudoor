@@ -28,6 +28,36 @@ async function courseScope(svc: Ctx["svc"], userId: string) {
 }
 
 /**
+ * Program scope for the caller. null = all programs (admin).
+ * Coordinator -> program_admins rows; student -> own program;
+ * professor/TA -> programs of taught/assisted courses.
+ */
+export async function myPrograms(
+  svc: Ctx["svc"], profile: { id: string; role: string }
+): Promise<string[] | null> {
+  if (profile.role === "admin") return null;
+  const set = new Set<string>();
+  const { data: pa } = await svc.from("program_admins").select("program_id").eq("profile_id", profile.id);
+  for (const r of (pa ?? []) as any[]) if (r.program_id) set.add(r.program_id);
+  const { data: det } = await svc.from("student_details").select("program_id").eq("user_id", profile.id).maybeSingle();
+  if ((det as any)?.program_id) set.add((det as any).program_id);
+  const scope = await courseScope(svc, profile.id);
+  const cids = [...scope.taught, ...scope.assisted];
+  if (cids.length) {
+    const { data: cs } = await svc.from("courses").select("id,program_id").in("id", cids);
+    for (const c of (cs ?? []) as any[]) if (c.program_id) set.add(c.program_id);
+  }
+  return [...set];
+}
+
+/** True when a program-scoped write/read target is inside the caller's scope. */
+export function inProgramScope(programs: string[] | null, programId?: string | null): boolean {
+  if (programs === null) return true;
+  if (!programId) return false;
+  return programs.includes(programId);
+}
+
+/**
  * Server-side permission gate for admin/console/instructor APIs.
  * - resolves system + custom-role grants, checks (resource, action)
  * - for COURSE_SCOPED resources, non-admins must own the course (opts.courseId)
@@ -60,7 +90,17 @@ export async function requirePerm(
     }
     if (!courseId) return deny("course_required");
     const scope = await courseScope(svc, user.id);
-    if (!ownsCourse(p as any, courseId, scope)) return deny("not_your_course");
+    if (!ownsCourse(p as any, courseId, scope)) {
+      // program coordinators (no course ownership): the course's program
+      // must be in their program_admins scope
+      const isCoord = p.role === "coordinator" || p.custom_role === "program_coordinator";
+      if (!isCoord) return deny("not_your_course");
+      const programs = await myPrograms(svc, p as any);
+      let pid: string | null = null;
+      const { data: c } = await svc.from("courses").select("program_id").eq("id", courseId).single();
+      pid = (c as any)?.program_id ?? null;
+      if (!inProgramScope(programs, pid)) return deny("not_your_course");
+    }
   }
 
   const ip = clientIp(req);

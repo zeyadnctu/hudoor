@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   const { svc } = gate.ctx;
   const body = await req.json();
   const { scope_type, scope_id, key, value } = body;
-  if (!["global", "faculty", "department", "course", "session"].includes(scope_type) || !key)
+  if (!["global", "faculty", "department", "course", "session", "program"].includes(scope_type) || !key)
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   if (scope_type !== "global" && !scope_id) return NextResponse.json({ error: "scope_required" }, { status: 400 });
   const prevQ = svc.from("app_settings").select("value").eq("scope_type", scope_type).eq("key", key);

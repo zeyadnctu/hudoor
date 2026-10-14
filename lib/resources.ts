@@ -53,12 +53,15 @@ export const RESOURCES: Record<string, ResourceDef> = {
   },
   programs: {
     name: "programs", table: "programs", label: "Programs", labelAr: "البرامج",
-    searchCols: ["code", "name_en", "name_ar"], defaultSort: "code", softDelete: true,
+    searchCols: ["code", "name_en", "name_ar", "partner"], defaultSort: "code", softDelete: true,
     fields: [
-      { key: "faculty_id", label: "Faculty", type: "select", required: true, optionsFrom: "faculties", optionLabel: "name_ar", showInList: true },
       { key: "code", label: "Code", type: "text", required: true, showInList: true, inline: true },
       { key: "name_ar", label: "Name (AR)", type: "text", required: true, showInList: true, inline: true },
-      { key: "name_en", label: "Name (EN)", type: "text", required: true, showInList: true }
+      { key: "name_en", label: "Name (EN)", type: "text", required: true, showInList: true },
+      { key: "partner", label: "Partner", type: "text", showInList: true, inline: true, placeholder: "e.g. NTG company" },
+      { key: "type", label: "Type", type: "select", required: true, showInList: true, options: [{ value: "partner", label: "partner" }, { value: "regular", label: "regular" }] },
+      { key: "color", label: "Color", type: "text", showInList: true, placeholder: "#7C3AED" },
+      { key: "archived", label: "Archived", type: "boolean", showInList: true }
     ]
   },
   levels: {
@@ -97,8 +100,7 @@ export const RESOURCES: Record<string, ResourceDef> = {
       { key: "name_ar", label: "Name (AR)", type: "text", required: true, showInList: true, inline: true },
       { key: "name_en", label: "Name (EN)", type: "text", required: true, showInList: true },
       { key: "credit_hours", label: "Credit hours", type: "number", showInList: true, inline: true },
-      { key: "faculty_id", label: "Faculty", type: "select", optionsFrom: "faculties", optionLabel: "name_ar" },
-      { key: "department_id", label: "Department", type: "select", optionsFrom: "departments", optionLabel: "name_ar" },
+      { key: "program_id", label: "Program", type: "select", optionsFrom: "programs", optionLabel: "code", showInList: true },
       { key: "semester_id", label: "Semester", type: "select", optionsFrom: "semesters", optionLabel: "name" },
       { key: "section", label: "Section", type: "text", showInList: true, inline: true }
     ]
