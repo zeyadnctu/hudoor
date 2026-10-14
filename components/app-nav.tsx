@@ -3,13 +3,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp, Controls } from "@/components/providers";
-import { LogOut, ScanLine, House, CalendarDays, FileBarChart, Table2 } from "lucide-react";
+import { LogOut, ScanLine, House, CalendarDays, FileBarChart, Table2, User, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = {
   student: [
     { href: "/student", label: "myAttendance", icon: <House size={19} strokeWidth={2} /> },
-    { href: "/student/scan-in-app", label: "openScanner", icon: <ScanLine size={19} strokeWidth={2} /> }
+    { href: "/student/scan-in-app", label: "openScanner", icon: <ScanLine size={19} strokeWidth={2} /> },
+    { href: "/student/timetable", label: "weeklyTimetable", icon: <MapPin size={19} strokeWidth={2} /> },
+    { href: "/profile", label: "profileTitle", icon: <User size={19} strokeWidth={2} /> }
   ],
   professor: [
     { href: "/professor", label: "startSession", icon: <CalendarDays size={19} strokeWidth={2} /> },
