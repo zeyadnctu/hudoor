@@ -1,58 +1,84 @@
-# Hudoor — setup
+# Hudoor (حضور) — University Attendance
 
-## 1. Supabase project
-1. Create project at https://supabase.com → copy Project URL, anon key, service_role key.
-2. SQL Editor → run `supabase/migrations/001_schema.sql`, then `supabase/seed.sql`.
-3. Auth → Providers → enable Email + (optional) Google (redirect: `NEXT_PUBLIC_APP_URL/student`).
-4. Auth → Users → create admin + test users, copy their UUIDs, insert into `profiles`:
-```sql
-insert into profiles (id,email,role,status) values
- ('UUID','admin@hudoor.edu','admin','approved');
-```
+Next.js 14 PWA for university attendance with rotating QR codes, Supabase backend,
+Arabic/RTL-first, and a manual timetable editor. Target: New Cairo Technological
+University (NCTU) with NCTU (NTG) as the initial partner program.
 
-## 2. Local run
-```bash
-cp .env.example .env.local  # fill keys
-npm install
-npm run dev  # http://localhost:3000
-```
+## Quick start (local, zero manual steps)
 
-## 3. Deploy (Vercel)
-- Import repo, set env vars (same as .env), deploy. Service-role key only server-side (API routes use it; never `NEXT_PUBLIC_`).
-- Required env vars on Vercel: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-  `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_APP_URL` (your https domain, used inside QR links),
-  `QR_TOKEN_TTL_SECONDS=15`. If Google login is used, add `<domain>/student` as redirect URL in Supabase Auth settings.
-- After deploy, create the admin account from the live `/signup` page, then in Supabase SQL:
-  `update profiles set role='admin', status='approved' where email='...';`.
-  From then on use `/admin` → Manage data to create instructors, courses, and enrollments.
+1. **Prerequisites**: Node 20+, a local or remote Supabase project.
+2. **Clone & install**
+   ```bash
+   git clone <repo> hudoor
+   cd hudoor
+   npm install
+   ```
+3. **Env vars**
+   ```bash
+   cp .env.example .env.local
+   # edit .env.local with your Supabase URL, anon key, service-role key
+   ```
+   See `.env.example` for full list.
+4. **Database**
+   Apply migrations in order: `supabase/migrations/001_*.sql` → `005_*.sql`.  
+   For demo data: `supabase/seed_ntg_2026.sql` then run (production = bootstrap only, no demo seed).
+5. **First admin (bootstrap)**  
+   Set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` env vars once, run the
+   bootstrap command (documented in RUNBOOK.md), then remove those vars.
+6. **Run**
+   ```bash
+   npm run dev
+   ```
+   Open http://localhost:3000.
 
-## Decisions
-- QR secret never leaves server: client polls `GET /api/sessions/[id]/qr-token` which signs JWT with per-session secret (HS256, 15s TTL).
-- Device ID: random stable ID in localStorage + cookie + IndexedDB best-effort; enforced server-side in `devices` (unique per student + per device).
-- Geofence is soft signal: Haversine + accuracy margin; per-session toggle; mock/low-accuracy rejected.
-- Server time (`now()`) used for all expiry/active checks; client countdown is display-only.
-- CSV includes BOM for Arabic Excel.
-- Late verdict is server-computed (`present_within_min` / `late_after_min` / grace, narrowest scope wins).
-- View-as switches role gating + banner only; record data stays under RLS. Read-only by convention.
+## Commands
 
-## Adding a new managed resource (no rewriting)
-1. Migration: `create table` + RLS (admin write, sensible reads) + `deleted_at` if trashable.
-2. `lib/resources.ts`: one `ResourceDef` entry (fields, search cols, `pk` if not `id`).
-3. `lib/permissions.ts`: nothing needed if it fits an existing resource name; otherwise add the name to `RESOURCES` and grant it in `SYSTEM_MATRIX`.
-4. Page: `app/admin/<name>/page.tsx` rendering `<CrudPage resource="<name>" columns={...} />` (+ optional detail drawer).
-5. Sidebar: one line in `components/console/AdminShell.tsx` NAV.
-6. API: none — `app/api/console/[resource]` already does list/create/edit/delete with permission checks + before/after audit + soft delete.
-Custom behavior (joins, side effects) gets a dedicated route using `requirePerm` from `lib/guard.ts`.
+| command | what |
+|---|---|
+| `npm run dev` | dev server |
+| `npm run build` | production build |
+| `npm test` | tsc compile of lib + node tests |
+| `npm run lint` | next lint |
 
-## Console migrations
-Run in order after 001: `002_console.sql` (all tables + RLS), `003_heads.sql` (heads),
-then `seed_console.sql` (demo roles grants, rooms, program). New env: `IMPERSONATION_SECRET`
-(32+ hex) enables admin view-as.
+Tests: `tests/permissions.test.mjs`, `tests/recurrence.test.mjs`, `tests/ntg-pdf.test.mjs` (skipped).
 
-## Test plan (cheating)
-1. Photo of QR to friend → token expires in ~15s; friend scan gets `expired_code`; attempt logged in flagged_attempts.
-2. Second device → `wrong_device` unless admin resets binding; flagged.
-3. Outside hall → `outside_hall` with distance; flagged. Disable geofence per session if needed.
-4. Double scan → idempotent `already_marked`, single record (UNIQUE constraint).
-5. Non-enrolled scanner → `not_enrolled`, flagged. Unapproved student → `not_eligible`.
-6. Expired/ended session → `session_closed`.
+## Roles
+
+- `admin` — full control
+- `professor` — own courses; instructor_type DR or ENG
+- `student` — own record, scan, timetable, profile
+- `coordinator` — program-scoped sub-admin (`program_admins`)
+- `ta` — teaching assistant (student role + custom_role ta)
+
+## Architecture at a glance
+
+- `app/` Next.js 14 pages + API routes (dynamic)
+- `lib/` guard, permissions, supabase server/client, recurrence, validators, i18n, programs, settings
+- `components/` console + UI primitives, app-nav, student-bottom-nav
+- `supabase/` migrations (001-006) + seed (`seed_ntg_2026.sql`)
+- Data model: University → Program → Level → SectionGroup → Student; Program → Course → Slot → Occurrence → Session → Record; Program → Instructor via `instructor_invites`, `course_professors`, `program_admins`; Settings per scope (`app_settings`: global / program).
+
+## Security notes
+
+- Service-role key is server-only (`lib/supabase-server.ts`).
+- RLS policies must be enabled on every Supabase table in production. The app relies on
+  `requirePerm` + `myPrograms`/`inProgramScope` server-side checks; never trust DB just on RLS.
+- Scan endpoint uses enrolled/verified/session-window/device/geofence checks; server time only.
+- Authentication uses Supabase cookies; set env staging/prod to HTTPS only.
+- See SECURITY.md for threat model and known limitations.
+
+## Known limitations
+
+- PDF timetable import is parked (schema stays importer-ready). Parser in `lib/ntg-parse.ts`.
+- Device binding uses stored device ID + admin-approved reset (no WebAuthn yet).
+- 2FA and anti-relay detection signals are deferred to a future security pass.
+- Cron on Hobby runs only daily; session ticking is lazy on page load.
+- Consent/privacy/anonymize-data pages not yet built.
+
+## Docs
+
+- `AUDIT.md` — full review report and fixes.
+- `SECURITY.md` — threat model.
+- `RUNBOOK.md` — deploy, rollback, restore, bootstrap admin.
+- `ARCHITECTURE.md` — data model and scan flow.
+- `ADMIN_GUIDE.md` — non-technical staff guide (ar+en, short).
