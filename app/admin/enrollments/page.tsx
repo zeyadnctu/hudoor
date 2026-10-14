@@ -20,6 +20,9 @@ export default function EnrollmentsPage() {
   const [msg, setMsg] = useState("");
   const [add, setAdd] = useState({ refs: "", section: "A", prog: "", level: "" });
   const [conflicts, setConflicts] = useState<any[]>([]);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [pickQ, setPickQ] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
   const { programId, programs, isAdmin } = useMyProgram();
   const [progFilter, setProgFilter] = useState("");
 
@@ -57,9 +60,17 @@ export default function EnrollmentsPage() {
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [course, section]);
 
+  // all students NOT on this course, for pick-from-list enrolling
+  async function loadCandidates() {
+    const r = await fetch("/api/console/users-manage?role=student&perPage=200").then(x => x.json()).catch(() => ({ rows: [] }));
+    const enrolledIds = new Set(rows.map(x => x.student_id));
+    setCandidates(((r.rows ?? []) as any[]).filter(u => !enrolledIds.has(u.id)));
+  }
+  useEffect(() => { loadCandidates(); /* eslint-disable-next-line */ }, [course, rows.length]);
+
   async function doAdd() {
     setMsg(""); setConflicts([]);
-    const refs = add.refs.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    const refs = [...picked, ...add.refs.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)];
     const r = await fetch("/api/console/enrollments", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -72,7 +83,10 @@ export default function EnrollmentsPage() {
     setMsg(`✓ enrolled ${j.enrolled.length}${j.missing.length ? `, missing: ${j.missing.slice(0, 5).join("; ")}` : ""}`);
     setConflicts(j.conflicts ?? []);
     setAdd({ refs: "", section: "A", prog: "", level: "" });
+    setPicked([]);
+    setPickQ("");
     load();
+    loadCandidates();
   }
   async function doRemove() {
     const r = await fetch("/api/console/enrollments", {
@@ -157,6 +171,38 @@ export default function EnrollmentsPage() {
 
       <div className="mt-6 border-t-2 border-ink/15 pt-4 dark:border-white/20">
         <h2 className="font-display flex items-center gap-2 text-xl font-bold"><UserPlus size={20} strokeWidth={2} /> {t.enrollStudents}</h2>
+        <div className="mt-2 rounded-md2 border border-black/10 p-3 dark:border-white/15">
+          <div className="flex items-center justify-between gap-2">
+            <Label>{t.pickStudents} ({candidates.length})</Label>
+            {picked.length > 0 && <span className="tnum text-sm font-bold text-register">✓ {picked.length}</span>}
+          </div>
+          <Input value={pickQ} onChange={e => setPickQ(e.target.value)} placeholder={`${t.search}…`} dir="auto" />
+          <div className="mt-2 max-h-56 divide-y divide-black/10 overflow-auto rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+            {candidates
+              .filter(u => {
+                if (!pickQ.trim()) return true;
+                const s = pickQ.trim().toLowerCase();
+                return `${u.details?.full_name_ar ?? ""} ${u.details?.full_name_en ?? ""} ${u.details?.university_id ?? ""} ${u.email ?? ""}`.toLowerCase().includes(s);
+              })
+              .slice(0, 100)
+              .map(u => {
+                const on = picked.includes(u.id);
+                const label = u.details?.full_name_ar || u.details?.full_name_en || u.email;
+                return (
+                  <button key={u.id} type="button" onClick={() => setPicked(on ? picked.filter(x => x !== u.id) : [...picked, u.id])}
+                    aria-pressed={on}
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-start transition-colors hover:bg-black/5 dark:hover:bg-white/10 ${on ? "bg-register-light/60 dark:bg-register/20" : ""}`}>
+                    <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border-2 font-bold ${on ? "border-register bg-register text-white" : "border-black/20 text-transparent dark:border-white/25"}`}>✓</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold" dir="auto">{label}</span>
+                      <span className="tnum block truncate text-xs text-neutral-500" dir="auto">{u.details?.university_id ?? ""}{u.details?.university_id && u.email ? " · " : ""}{u.email ?? ""}</span>
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+          <p className="mt-1 text-xs text-neutral-500">{t.pickStudentsHint}</p>
+        </div>
         <div className="mt-2 grid gap-2">
           <div><Label>Email / {t.universityId} (one per line)</Label>
             <textarea value={add.refs} onChange={e => setAdd({ ...add, refs: e.target.value })} rows={4} dir="auto"
