@@ -6,7 +6,7 @@ import { useApp } from "@/components/providers";
 import { Button, StatusPill, EmptyState, SkeletonRows } from "@/components/ui";
 import { getOrCreateDeviceId } from "@/lib/device";
 import { tickSessions } from "@/lib/session-tick";
-import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles } from "lucide-react";
+import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Course = { id: string; code: string; name_en: string; name_ar: string };
@@ -37,8 +37,18 @@ export default function StudentHome() {
   const [flash, setFlash] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [userId, setUserId] = useState("");
+  const [programCourses, setProgramCourses] = useState<any[]>([]);
+  const [enrolling, setEnrolling] = useState<string | null>(null);
 
   useEffect(() => { getOrCreateDeviceId(); tickSessions(); }, []);
+
+  // Load all courses in the student's program
+  useEffect(() => {
+    fetch("/api/student/courses").then(r => r.json()).then(j => {
+      setProgramCourses(j.rows ?? []);
+    }).catch(() => {});
+  }, []);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
@@ -49,6 +59,7 @@ export default function StudentHome() {
       const sb = browserSupabase();
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
       const { data: det } = await sb.from("student_details").select("*").eq("user_id", user.id).maybeSingle();
       setDetails(det ?? null);
       if (det?.program_id) {
@@ -177,6 +188,27 @@ export default function StudentHome() {
       setExcuses(ex.rows ?? []);
     }
   }
+  async function enrollCourse(courseId: string) {
+    setEnrolling(courseId);
+    const r = await fetch("/api/student/enroll", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_id: courseId })
+    });
+    const j = await r.json().catch(() => ({}));
+    setEnrolling(null);
+    if (r.ok) {
+      setFlash("✓");
+      setTimeout(() => setFlash(""), 2000);
+      // Refresh both lists
+      fetch("/api/student/courses").then(r => r.json()).then(j2 => setProgramCourses(j2.rows ?? [])).catch(() => {});
+      const sb = browserSupabase();
+      const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar)").eq("student_id", userId);
+      setCourses(((enr ?? []).map((e: any) => e.courses) as Course[]));
+    } else {
+      setFlash(j.error ?? "error");
+    }
+  }
+
   async function requestDeviceReset() {
     const r = await fetch("/api/console/service", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -354,6 +386,40 @@ export default function StudentHome() {
           })}
         </div>
       </section>
+
+      {/* program courses — enroll in any course from your program */}
+      {programCourses.length > 0 && (
+        <section className="mt-7" aria-label={t.myProgramCourses}>
+          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><GraduationCap size={20} strokeWidth={2} /> {t.myProgramCourses}</h2>
+          <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+            {programCourses.map(c => (
+              <div key={c.id} className="flex items-center justify-between gap-2 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold" dir="auto">
+                    {locale === "ar" ? c.name_ar : c.name_en}
+                    <span className="tnum ms-2 text-sm font-medium text-neutral-500">{c.code}</span>
+                  </p>
+                  {c.credit_hours != null && (
+                    <p className="tnum text-xs text-neutral-500">{c.credit_hours} {t.creditHours}</p>
+                  )}
+                </div>
+                {c.enrolled ? (
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">✓</span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="!min-h-[40px] shrink-0"
+                    disabled={enrolling === c.id}
+                    onClick={() => enrollCourse(c.id)}
+                  >
+                    {enrolling === c.id ? "…" : t.enroll}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* announcements */}
       {notes.length > 0 && (
