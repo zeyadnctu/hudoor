@@ -7,6 +7,7 @@ import { Button, Input, Select, Label, StatusPill } from "@/components/ui";
 import { ConsoleTable } from "@/components/console/DataTable";
 import { ConfirmDialog } from "@/components/console/ConfirmDialog";
 import { UserPlus, Upload, Download, Eye, KeyRound, Smartphone, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Row = any;
 
@@ -16,6 +17,7 @@ function UsersInner() {
   const [q, setQ] = useState(sp.get("q") ?? "");
   const [role, setRole] = useState("");
   const [status, setStatus] = useState("");
+  const [tab, setTab] = useState<"all" | "students">("all");
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -34,13 +36,44 @@ function UsersInner() {
   const [nu, setNu] = useState({ email: "", password: "", role: "student" });
   const [hist, setHist] = useState<any[]>([]);
   const [enr, setEnr] = useState<any[]>([]);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [assignCourseId, setAssignCourseId] = useState("");
+  const [assigning, setAssigning] = useState(false);
 
   async function load(p = page) {
     setLoading(true);
     const params = new URLSearchParams({ page: String(p), perPage: "25", search: q, role, status });
     const r = await fetch(`/api/console/users-manage?${params}`);
     const j = await r.json();
-    if (r.ok) { setRows(j.rows); setTotal(j.total); }
+    if (r.ok) {
+      let rows = j.rows;
+      // For students tab, fetch attendance status (present/late/absent)
+      if (tab === "students" && rows.length) {
+        const sb = (await import("@/lib/supabase")).browserSupabase();
+        const sids = rows.map((r: any) => r.id);
+        const { data: recs } = await sb.from("attendance_records")
+          .select("student_id,status")
+          .in("student_id", sids);
+        const byStudent = new Map<string, { present: number; late: number; absent: number }>();
+        for (const rec of (recs ?? []) as any[]) {
+          const entry = byStudent.get(rec.student_id) ?? { present: 0, late: 0, absent: 0 };
+          if (rec.status === "present") entry.present++;
+          else if (rec.status === "late") entry.late++;
+          else entry.absent++;
+          byStudent.set(rec.student_id, entry);
+        }
+        rows = rows.map((r: any) => {
+          const a = byStudent.get(r.id);
+          if (!a) return { ...r, attendanceStatus: "absent" };
+          if (a.present + a.late === 0) return { ...r, attendanceStatus: "absent" };
+          const p = Math.round(((a.present + a.late) / (a.present + a.late + a.absent)) * 100);
+          return { ...r, attendanceStatus: p >= 75 ? "present" : p >= 50 ? "late" : "absent" };
+        });
+      }
+      setRows(rows);
+      setTotal(j.total);
+    }
     else setNotice(j.error ?? "error");
     setLoading(false);
   }
@@ -51,13 +84,16 @@ function UsersInner() {
     setDetail(row);
     setEdit({ email: row.email, role: row.role, custom_role: row.custom_role ?? "", status: row.status, is_active: row.is_active });
     setNewPw(""); setHist([]); setEnr([]);
-    const [h, e] = await Promise.all([
+    setAssignOpen(false); setAssignCourseId("");
+    const [h, e, cs] = await Promise.all([
       fetch(`/api/console/audit?actor=${row.id}&perPage=20`).then(r => r.json()).catch(() => ({ rows: [] })),
       row.role === "student"
         ? fetch(`/api/console/enrollments?course_id=&perPage=1`).then(() => ({ rows: [] })).catch(() => ({ rows: [] }))
-        : Promise.resolve({ rows: [] })
+        : Promise.resolve({ rows: [] }),
+      fetch("/api/console/courses?perPage=200").then(r => r.json()).catch(() => ({ rows: [] }))
     ]);
     setHist(h.rows ?? []);
+    setCourses(cs.rows ?? []);
     void e;
     // enrollments of this student across courses (admin view)
     if (row.role === "student") {
@@ -66,6 +102,26 @@ function UsersInner() {
       const { data } = await sb.from("enrollments").select("course_id,courses(code)").eq("student_id", row.id).limit(50);
       setEnr((data ?? []) as any[]);
     }
+  }
+
+  async function assignToCourse() {
+    if (!assignCourseId || !detail) return;
+    setAssigning(true);
+    // Get current professors for this course
+    const sb = (await import("@/lib/supabase")).browserSupabase();
+    const { data: current } = await sb.from("course_professors").select("professor_id").eq("course_id", assignCourseId);
+    const pids = [...new Set([...(current ?? []).map(r => r.professor_id), detail.id])];
+    const r = await fetch("/api/console/course-staff", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_id: assignCourseId, professor_ids: pids })
+    });
+    const j = await r.json().catch(() => ({}));
+    setAssigning(false);
+    if (!r.ok) { setNotice(j.error ?? "error"); return; }
+    setAssignOpen(false);
+    setAssignCourseId("");
+    setNotice("✓");
+    setTimeout(() => setNotice(""), 2000);
   }
 
   async function saveEdit() {
@@ -149,14 +205,26 @@ function UsersInner() {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* tabs */}
+      <div className="mt-4 flex gap-2">
+        <button onClick={() => { setTab("all"); setRole(""); setStatus(""); setPage(1); load(1); }} className={`min-h-[44px] rounded-md2 px-4 text-sm font-bold transition-colors ${tab === "all" ? "bg-ink text-chalk dark:bg-chalk dark:text-ink" : "border border-black/15 dark:border-white/20"}`}>
+          {t.users}
+        </button>
+        <button onClick={() => { setTab("students"); setRole("student"); setStatus(""); setPage(1); load(1); }} className={`min-h-[44px] rounded-md2 px-4 text-sm font-bold transition-colors ${tab === "students" ? "bg-ink text-chalk dark:bg-chalk dark:text-ink" : "border border-black/15 dark:border-white/20"}`}>
+          {t.student}
+        </button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="col-span-2"><Input value={q} onChange={e => setQ(e.target.value)} placeholder="email…" dir="ltr" aria-label="Search" /></div>
-        <Select value={role} onChange={e => setRole(e.target.value)} aria-label="Role">
-          <option value="">All roles</option>
-          <option value="student">{t.student}</option>
-          <option value="professor">{t.professor}</option>
-          <option value="admin">{t.admin}</option>
-        </Select>
+        {tab === "all" && (
+          <Select value={role} onChange={e => setRole(e.target.value)} aria-label="Role">
+            <option value="">All roles</option>
+            <option value="student">{t.student}</option>
+            <option value="professor">{t.professor}</option>
+            <option value="admin">{t.admin}</option>
+          </Select>
+        )}
         <Select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status">
           <option value="">All statuses</option>
           <option value="pending">pending</option>
@@ -175,7 +243,16 @@ function UsersInner() {
             { key: "email", label: "Email", sortable: true, render: r => <span dir="ltr" className="font-medium">{r.email}</span> },
             { key: "name", label: t.name, render: r => <span dir="auto">{r.details?.full_name_ar ?? r.details?.full_name_en ?? "—"}</span> },
             { key: "role", label: "Role", render: r => <span>{r.role}{r.custom_role ? ` + ${r.custom_role}` : ""}{r.is_active === false ? " (off)" : ""}</span> },
-            { key: "status", label: t.status, render: r => <StatusPill status={r.status === "approved" ? "present" : r.status === "pending" ? "late" : "absent"} /> },
+            { key: "status", label: t.status, render: r => tab === "students"
+              ? <StatusPill status={r.attendanceStatus ?? "absent"} />
+              : <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold",
+                  r.status === "approved" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                  : r.status === "pending" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                  : r.status === "rejected" ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                  : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300")}>
+                  {r.status}
+                </span>
+            },
             { key: "last", label: t.lastLogin, render: r => <span className="tnum text-sm text-neutral-500">{r.last_login_at ? new Date(r.last_login_at).toLocaleString() : "—"}</span> }
           ]}
           total={total} page={page} perPage={25} sort="created_at" order="desc"
@@ -267,6 +344,29 @@ function UsersInner() {
             {enr.length > 0 && (
               <div className="text-sm"><p className="font-bold">{t.myCourses}</p>
                 <p className="tnum">{enr.map((e: any) => e.courses?.code).join(", ")}</p>
+              </div>
+            )}
+            {/* quick assign to course */}
+            {(detail.role === "professor" || detail.role === "admin") && (
+              <div className="border-t border-black/10 pt-3 dark:border-white/10">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold">Assign to course</p>
+                  <Button variant="outline" className="!min-h-[36px] !text-xs" onClick={() => setAssignOpen(!assignOpen)}>
+                    {assignOpen ? "✕" : "+ Assign"}
+                  </Button>
+                </div>
+                {assignOpen && (
+                  <div className="mt-2 grid gap-2">
+                    <select value={assignCourseId} onChange={e => setAssignCourseId(e.target.value)}
+                      className="min-h-[44px] w-full rounded-md2 border-2 border-black/15 bg-paper px-3 text-sm outline-none focus:border-register dark:border-white/20 dark:bg-white/5">
+                      <option value="">— Select course —</option>
+                      {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
+                    </select>
+                    <Button onClick={assignToCourse} disabled={!assignCourseId || assigning} className="w-full">
+                      {assigning ? "…" : "Assign"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             <div className="grid grid-cols-2 gap-2 border-t border-black/10 pt-3 dark:border-white/10">
