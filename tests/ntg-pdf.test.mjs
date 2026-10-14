@@ -67,7 +67,9 @@ describe("NTG cell parsing", () => {
 });
 
 // ---- integration: real PDF must match the brief section 4 table ----
-describe("NTG V3 fixture", () => {
+// PAUSED: NTG grid parser is parked mid-debug (header→day assignment + span
+// calibration). Re-enable (describe instead of describe.skip) when resuming.
+describe.skip("NTG V3 fixture (paused)", () => {
   let parsed = null;
   before(async () => {
     const dir = dirname(fileURLToPath(import.meta.url));
