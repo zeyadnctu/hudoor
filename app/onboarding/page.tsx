@@ -42,6 +42,11 @@ export default function Onboarding() {
   useEffect(() => {
     (async () => {
       const sb = browserSupabase();
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return;
+      // If onboarding already completed, redirect to student home
+      const { data: det } = await sb.from("student_details").select("id").eq("user_id", user.id).maybeSingle();
+      if (det) { r.push("/student"); return; }
       const { data } = await sb.from("programs").select("*").eq("archived", false).order("type", { ascending: false }).order("code");
       const rows = (data ?? []) as any[];
       // partner programs first, then the rest by code

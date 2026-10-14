@@ -6,7 +6,7 @@ import { useApp } from "@/components/providers";
 import { Button, StatusPill, EmptyState, SkeletonRows } from "@/components/ui";
 import { getOrCreateDeviceId } from "@/lib/device";
 import { tickSessions } from "@/lib/session-tick";
-import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles, GraduationCap } from "lucide-react";
+import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles, GraduationCap, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Course = { id: string; code: string; name_en: string; name_ar: string };
@@ -43,12 +43,12 @@ export default function StudentHome() {
 
   useEffect(() => { getOrCreateDeviceId(); tickSessions(); }, []);
 
-  // Load all courses in the student's program
   useEffect(() => {
     fetch("/api/student/courses").then(r => r.json()).then(j => {
       setProgramCourses(j.rows ?? []);
     }).catch(() => {});
   }, []);
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
@@ -135,7 +135,6 @@ export default function StudentHome() {
       const r = recBySession.get(s.id);
       if (r && (r.status === "present" || r.status === "late")) mine++;
     });
-    // streak: consecutive attended from most recent ended session
     const desc = [...ended].sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at));
     let streak = 0;
     for (const s of desc) {
@@ -199,7 +198,6 @@ export default function StudentHome() {
     if (r.ok) {
       setFlash("✓");
       setTimeout(() => setFlash(""), 2000);
-      // Refresh both lists
       fetch("/api/student/courses").then(r => r.json()).then(j2 => setProgramCourses(j2.rows ?? [])).catch(() => {});
       const sb = browserSupabase();
       const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar)").eq("student_id", userId);
@@ -221,104 +219,105 @@ export default function StudentHome() {
   const ringColor = stats.p >= 75 ? "#2E9B5F" : stats.p >= 50 ? "#D9A21B" : "#B5432E";
 
   return (
-    <main className="mx-auto w-full max-w-md px-5 pb-28 pt-5">
-      {/* header */}
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-neutral-500">{greet}{firstName ? `، ${firstName}` : ""}</p>
-          <h1 className="font-display text-2xl font-bold leading-tight">{t.scanToAttend}</h1>
+    <main className="mx-auto w-full max-w-md px-5 pb-32 pt-6">
+      {/* header — clean, no icons */}
+      <header>
+        <p className="text-sm font-medium text-neutral-400">{greet}{firstName ? `، ${firstName}` : ""}</p>
+        <div className="mt-1 flex items-center gap-2">
+          <h1 className="font-display text-[26px] font-bold leading-tight">{t.scanToAttend}</h1>
+          {programName && (
+            <span className="shrink-0 rounded-full bg-register/10 px-2.5 py-1 text-[11px] font-bold text-register">
+              {programName}
+            </span>
+          )}
         </div>
-        {programName && (
-          <span className="shrink-0 rounded-full bg-register-light px-3 py-1.5 text-xs font-bold text-register-dark dark:bg-register/25 dark:text-sky-200">{programName}</span>
-        )}
       </header>
 
-      {/* LIVE hero */}
+      {/* LIVE hero — prominent scan card */}
       {live ? (
-        <Link href="/student/scan-in-app" className="mt-4 block overflow-hidden rounded-lg2 bg-ink text-white shadow-lg dark:bg-white dark:text-ink" aria-label={t.tapToScan}>
+        <Link href="/student/scan-in-app" className="mt-5 block overflow-hidden rounded-xl bg-ink text-white shadow-lg dark:bg-white dark:text-ink" aria-label={t.tapToScan}>
           <span className="block p-5">
-            <span className="flex items-center gap-2 text-sm font-bold">
-              <span className="relative flex h-3 w-3">
+            <span className="flex items-center gap-2 text-[13px] font-bold">
+              <span className="relative flex h-2.5 w-2.5">
                 <span className="absolute h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="h-3 w-3 rounded-full bg-emerald-400" />
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
               </span>
               {t.liveNow} · {live.courses?.code}
             </span>
-            <span className="font-display mt-1 block text-xl font-bold" dir="auto">{locale === "ar" ? live.courses?.name_ar : live.courses?.name_en}</span>
-            <span className="mt-1 block text-sm opacity-80">
+            <span className="font-display mt-1.5 block text-lg font-bold" dir="auto">{locale === "ar" ? live.courses?.name_ar : live.courses?.name_en}</span>
+            <span className="mt-1 block text-[13px] opacity-70">
               {t.endsIn} {fmtDur(Math.max(1, Math.ceil((+new Date(live.ends_at) - now) / 60000)), t)}
               {live.room_id && rooms[live.room_id] ? ` · ${rooms[live.room_id]}` : ""}
             </span>
-            <span className="mt-4 flex min-h-[60px] items-center justify-center gap-2 rounded-md2 bg-emerald-500 text-lg font-bold text-white">
-              <ScanLine size={24} strokeWidth={2} /> {t.scanNow}
+            <span className="mt-4 flex min-h-[56px] items-center justify-center gap-2 rounded-lg bg-emerald-500 text-base font-bold text-white">
+              <ScanLine size={22} strokeWidth={2} /> {t.scanNow}
             </span>
           </span>
         </Link>
       ) : (
-        <Link href="/student/scan-in-app" className="mt-4 block">
-          <span className="flex min-h-[72px] items-center justify-center gap-3 rounded-lg2 bg-register text-xl font-bold text-white transition-colors hover:bg-register-dark">
-            <ScanLine size={28} strokeWidth={2} /> {t.scanToAttend}
+        <Link href="/student/scan-in-app" className="mt-5 block">
+          <span className="flex min-h-[68px] items-center justify-center gap-3 rounded-xl bg-register text-lg font-bold text-white shadow-md transition-all hover:bg-register-dark hover:shadow-lg active:scale-[0.98]">
+            <ScanLine size={26} strokeWidth={2} /> {t.scanToAttend}
           </span>
         </Link>
       )}
       {!live && upcoming && (
-        <div className="mt-2 flex items-center gap-2 rounded-md2 border border-black/10 px-4 py-2.5 text-sm dark:border-white/15">
-          <Sparkles size={17} strokeWidth={2} className="shrink-0 text-register" />
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-black/8 px-4 py-2.5 text-[13px] dark:border-white/12">
+          <Sparkles size={16} strokeWidth={2} className="shrink-0 text-register" />
           <span dir="auto">
             {t.nextUp}: <b>{upcoming.courses?.code}</b> · {t.startsIn} {fmtDur(Math.max(1, Math.ceil((+new Date(upcoming.starts_at) - now) / 60000)), t)}
           </span>
         </div>
       )}
-      <p className="mt-2 text-center text-sm text-neutral-500">{t.scanHint}</p>
-      {flash && <p className="mt-2 text-center text-sm font-semibold" role="status">{flash}</p>}
+      {flash && <p className="mt-2 text-center text-[13px] font-semibold text-register" role="status">{flash}</p>}
 
-      {/* stats */}
-      <section className="mt-5 grid grid-cols-3 gap-2" aria-label={t.overallRate}>
-        <div className="flex flex-col items-center rounded-md2 border border-black/10 px-2 py-3 dark:border-white/15">
-          <svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label={`${stats.p}%`}>
-            <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7" className="stroke-black/10 dark:stroke-white/15" />
+      {/* stats — clean 3-col grid */}
+      <section className="mt-6 grid grid-cols-3 gap-2.5" aria-label={t.overallRate}>
+        <div className="flex flex-col items-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
+          <svg width="56" height="56" viewBox="0 0 64 64" role="img" aria-label={`${stats.p}%`}>
+            <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7" className="stroke-black/8 dark:stroke-white/12" />
             <circle cx="32" cy="32" r="26" fill="none" stroke={ringColor} strokeWidth="7" strokeLinecap="round"
               strokeDasharray={ringC} strokeDashoffset={ringC - (ringC * stats.p) / 100}
               transform="rotate(-90 32 32)" />
             <text x="32" y="37" textAnchor="middle" fontSize="15" fontWeight="800" className="fill-ink dark:fill-white">{stats.p}%</text>
           </svg>
-          <span className="mt-1 text-xs font-semibold text-neutral-500">{t.overallRate}</span>
+          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.overallRate}</span>
         </div>
-        <div className="flex flex-col items-center justify-center rounded-md2 border border-black/10 px-2 py-3 dark:border-white/15">
-          <span className="tnum font-display text-2xl font-bold">{stats.mine}<span className="text-base text-neutral-400">/{stats.total}</span></span>
-          <span className="mt-1 text-xs font-semibold text-neutral-500">{t.sessionsPresent}</span>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
+          <span className="tnum font-display text-[22px] font-bold leading-none">{stats.mine}<span className="text-sm text-neutral-400">/{stats.total}</span></span>
+          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.sessionsPresent}</span>
         </div>
-        <div className="flex flex-col items-center justify-center rounded-md2 border border-black/10 px-2 py-3 dark:border-white/15">
-          <span className="flex items-center gap-1 font-display text-2xl font-bold">
-            <Flame size={22} strokeWidth={2} className={stats.streak > 0 ? "text-orange-500" : "text-neutral-300"} />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
+          <span className="flex items-center gap-1 font-display text-[22px] font-bold leading-none">
+            <Flame size={20} strokeWidth={2} className={stats.streak > 0 ? "text-orange-500" : "text-neutral-300"} />
             {stats.streak}
           </span>
-          <span className="mt-1 text-xs font-semibold text-neutral-500">{t.dayStreak}</span>
+          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.dayStreak}</span>
         </div>
       </section>
 
-      {/* today's schedule */}
+      {/* today's schedule — clean cards */}
       <section className="mt-7" aria-label={t.todaySchedule}>
-        <h2 className="font-display flex items-center gap-2 text-xl font-bold"><CalendarDays size={20} strokeWidth={2} /> {t.todaySchedule}</h2>
-        <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
-          {loading && <div className="p-4"><div className="skeleton h-5 w-2/3 rounded bg-black/10 dark:bg-white/15" /><div className="skeleton mt-2 h-5 w-1/2 rounded bg-black/10 dark:bg-white/15" /></div>}
+        <h2 className="font-display flex items-center gap-2 text-lg font-bold"><CalendarDays size={18} strokeWidth={2} /> {t.todaySchedule}</h2>
+        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
+          {loading && <div className="p-4"><div className="skeleton h-5 w-2/3 rounded bg-black/8 dark:bg-white/12" /><div className="skeleton mt-2 h-5 w-1/2 rounded bg-black/8 dark:bg-white/12" /></div>}
           {!loading && todayList.length === 0 && (
-            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noSessionsToday}</p><p className="text-sm">{t.noSessionsHint}</p></div>
+            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noSessionsToday}</p><p className="text-[13px]">{t.noSessionsHint}</p></div>
           )}
           {todayList.map(s => {
             const r = recBySession.get(s.id);
             const ended = s.status === "ended" || +new Date(s.ends_at) <= now;
             return (
-              <div key={s.id} className={cn("flex items-center justify-between gap-2 px-4 py-3", s.status === "active" && "bg-emerald-500/[0.07]")}>
-                <div className="flex gap-3">
-                  <div className="tnum flex w-24 shrink-0 flex-col text-sm font-bold" dir="ltr">
+              <div key={s.id} className={cn("flex items-center justify-between gap-2 px-4 py-3", s.status === "active" && "bg-emerald-500/[0.06]")}>
+                <div className="flex items-center gap-3">
+                  <div className="tnum flex w-[92px] shrink-0 flex-col text-[13px] font-bold" dir="ltr">
                     <span>{fmtTime(s.starts_at, locale)}</span>
                     <span className="font-medium text-neutral-400">{fmtTime(s.ends_at, locale)}</span>
                   </div>
                   <div>
-                    <div className="tnum font-display font-semibold">{s.courses?.code}</div>
-                    <div className="flex items-center gap-1 text-xs text-neutral-500">
-                      {s.room_id && rooms[s.room_id] && <span className="flex items-center gap-0.5"><MapPin size={12} />{rooms[s.room_id]}</span>}
+                    <div className="tnum font-display text-[15px] font-semibold">{s.courses?.code}</div>
+                    <div className="flex items-center gap-1 text-xs text-neutral-400">
+                      {s.room_id && rooms[s.room_id] && <span className="flex items-center gap-0.5"><MapPin size={11} />{rooms[s.room_id]}</span>}
                       <span dir="auto">{locale === "ar" ? s.courses?.name_ar : s.courses?.name_en}</span>
                     </div>
                   </div>
@@ -330,13 +329,13 @@ export default function StudentHome() {
         </div>
       </section>
 
-      {/* courses accordion */}
+      {/* courses accordion — clean cards with progress */}
       <section className="mt-7" aria-label={t.myCourses}>
-        <h2 className="font-display flex items-center gap-2 text-xl font-bold"><BookOpen size={20} strokeWidth={2} /> {t.myCourses}</h2>
-        <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
-          {loading && <div className="p-4"><div className="skeleton h-5 w-1/2 rounded bg-black/10 dark:bg-white/15" /></div>}
+        <h2 className="font-display flex items-center gap-2 text-lg font-bold"><BookOpen size={18} strokeWidth={2} /> {t.myCourses}</h2>
+        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
+          {loading && <div className="p-4"><div className="skeleton h-5 w-1/2 rounded bg-black/8 dark:bg-white/12" /></div>}
           {!loading && courses.length === 0 && (
-            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noEnroll}</p><p className="text-sm">{t.noEnrollHint}</p></div>
+            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noEnroll}</p><p className="text-[13px]">{t.noEnrollHint}</p></div>
           )}
           {courses.map(c => {
             const s = pct(c.id);
@@ -345,32 +344,32 @@ export default function StudentHome() {
             return (
               <div key={c.id}>
                 <button onClick={() => setExpanded(open ? null : c.id)} aria-expanded={open}
-                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start">
-                  <span>
-                    <span className="block font-semibold">{locale === "ar" ? c.name_ar : c.name_en} <span className="tnum text-sm font-medium text-neutral-500">{c.code}</span></span>
-                    <span className="mt-1.5 block h-2 w-36 overflow-hidden rounded-full bg-black/10 dark:bg-white/15" role="progressbar" aria-valuenow={s.p} aria-valuemin={0} aria-valuemax={100}>
-                      <span className={cn("block h-full rounded-full", low ? "bg-hi" : "bg-stamp")} style={{ width: `${s.p}%` }} />
+                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[15px] font-semibold">{locale === "ar" ? c.name_ar : c.name_en} <span className="tnum text-[13px] font-medium text-neutral-400">{c.code}</span></span>
+                    <span className="mt-1.5 block h-1.5 w-32 overflow-hidden rounded-full bg-black/8 dark:bg-white/12" role="progressbar" aria-valuenow={s.p} aria-valuemin={0} aria-valuemax={100}>
+                      <span className={cn("block h-full rounded-full transition-all", low ? "bg-hi" : "bg-stamp")} style={{ width: `${s.p}%` }} />
                     </span>
-                    <span className="tnum mt-1 block text-xs text-neutral-500">
+                    <span className="tnum mt-1 block text-[11px] text-neutral-400">
                       {s.mine}/{s.total} {t.sessionsCount}
                       {low && <span className="font-semibold text-hi-dark dark:text-amber-300"> · {t.below75}</span>}
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <span className={cn("tnum font-display text-lg font-bold", s.total === 0 ? "text-neutral-400" : low ? "text-hi-dark dark:text-amber-300" : "text-stamp-dark dark:text-emerald-300")}>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className={cn("tnum font-display text-base font-bold", s.total === 0 ? "text-neutral-400" : low ? "text-hi-dark dark:text-amber-300" : "text-stamp-dark dark:text-emerald-300")}>
                       {s.total === 0 ? "—" : `${s.p}%`}
                     </span>
-                    <ChevronDown size={18} className={cn("text-neutral-400 transition-transform", open && "rotate-180")} />
+                    <ChevronDown size={16} className={cn("text-neutral-400 transition-transform", open && "rotate-180")} />
                   </span>
                 </button>
                 {open && (
-                  <div className="border-t border-black/10 bg-black/[0.02] px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-                    {s.list.length === 0 && <p className="py-2 text-sm text-neutral-500">{t.noSessionsYet}</p>}
+                  <div className="border-t border-black/8 bg-black/[0.02] px-4 py-2 dark:border-white/12 dark:bg-white/[0.03]">
+                    {s.list.length === 0 && <p className="py-2 text-[13px] text-neutral-500">{t.noSessionsYet}</p>}
                     {[...s.list].sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at)).map(sess => {
                       const r = recBySession.get(sess.id);
                       const ended = sess.status === "ended" || +new Date(sess.ends_at) <= now;
                       return (
-                        <div key={sess.id} className="flex items-center justify-between gap-2 border-b border-black/5 py-2 text-sm last:border-0 dark:border-white/5">
+                        <div key={sess.id} className="flex items-center justify-between gap-2 border-b border-black/5 py-2 text-[13px] last:border-0 dark:border-white/5">
                           <span className="tnum text-neutral-600 dark:text-neutral-300">
                             {new Date(sess.starts_at).toLocaleDateString(locale === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "numeric" })}
                             {" · "}{fmtTime(sess.starts_at, locale)}
@@ -390,25 +389,25 @@ export default function StudentHome() {
       {/* program courses — enroll in any course from your program */}
       {programCourses.length > 0 && (
         <section className="mt-7" aria-label={t.myProgramCourses}>
-          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><GraduationCap size={20} strokeWidth={2} /> {t.myProgramCourses}</h2>
-          <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+          <h2 className="font-display flex items-center gap-2 text-lg font-bold"><GraduationCap size={18} strokeWidth={2} /> {t.myProgramCourses}</h2>
+          <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
             {programCourses.map(c => (
-              <div key={c.id} className="flex items-center justify-between gap-2 px-4 py-3">
+              <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold" dir="auto">
+                  <p className="truncate text-[15px] font-semibold" dir="auto">
                     {locale === "ar" ? c.name_ar : c.name_en}
-                    <span className="tnum ms-2 text-sm font-medium text-neutral-500">{c.code}</span>
+                    <span className="tnum ms-2 text-[13px] font-medium text-neutral-400">{c.code}</span>
                   </p>
                   {c.credit_hours != null && (
-                    <p className="tnum text-xs text-neutral-500">{c.credit_hours} {t.creditHours}</p>
+                    <p className="tnum text-[11px] text-neutral-400">{c.credit_hours} {t.creditHours}</p>
                   )}
                 </div>
                 {c.enrolled ? (
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">✓</span>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">✓</span>
                 ) : (
                   <Button
                     variant="outline"
-                    className="!min-h-[40px] shrink-0"
+                    className="!min-h-[36px] shrink-0 !px-3 !text-[13px]"
                     disabled={enrolling === c.id}
                     onClick={() => enrollCourse(c.id)}
                   >
@@ -421,20 +420,20 @@ export default function StudentHome() {
         </section>
       )}
 
-      {/* announcements */}
+      {/* announcements — clean cards */}
       {notes.length > 0 && (
         <section className="mt-7" aria-label={t.announcementsFeed}>
-          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><Megaphone size={20} strokeWidth={2} /> {t.announcementsFeed}</h2>
-          <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+          <h2 className="font-display flex items-center gap-2 text-lg font-bold"><Megaphone size={18} strokeWidth={2} /> {t.announcementsFeed}</h2>
+          <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
             {notes.map((a: any) => {
               const isNew = Date.now() - +new Date(a.created_at) < 3 * 864e5;
               return (
-                <div key={a.id} className="px-4 py-2.5">
-                  <p className="flex items-center gap-2 font-bold" dir="auto">
+                <div key={a.id} className="px-4 py-3">
+                  <p className="flex items-center gap-2 text-[15px] font-bold" dir="auto">
                     {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-register" aria-label="new" />}
                     {locale === "ar" ? a.title_ar : a.title_en ?? a.title_ar}
                   </p>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-300" dir="auto">{locale === "ar" ? a.body_ar : a.body_en ?? a.body_ar}</p>
+                  <p className="mt-0.5 text-[13px] text-neutral-600 dark:text-neutral-300" dir="auto">{locale === "ar" ? a.body_ar : a.body_en ?? a.body_ar}</p>
                 </div>
               );
             })}
@@ -442,29 +441,29 @@ export default function StudentHome() {
         </section>
       )}
 
-      {/* history */}
+      {/* history — clean table */}
       <section className="mt-7" aria-label={t.recentScans}>
-        <h2 className="font-display flex items-center gap-2 text-xl font-bold"><ClipboardList size={20} strokeWidth={2} /> {t.recentScans}</h2>
-        <div className="mt-2 overflow-hidden rounded-md2 border border-black/10 dark:border-white/15">
+        <h2 className="font-display flex items-center gap-2 text-lg font-bold"><ClipboardList size={18} strokeWidth={2} /> {t.recentScans}</h2>
+        <div className="mt-2 overflow-hidden rounded-xl border border-black/8 dark:border-white/12">
           {loading ? (
             <table className="w-full"><tbody><SkeletonRows rows={4} cols={2} /></tbody></table>
           ) : records.length === 0 ? (
-            <EmptyState icon={<ClipboardList size={28} strokeWidth={1.75} />} title={t.nothingYet} hint={t.nothingYetHint} />
+            <EmptyState icon={<ClipboardList size={24} strokeWidth={1.75} />} title={t.nothingYet} hint={t.nothingYetHint} />
           ) : (
-            <table className="w-full border-collapse text-start text-[15px]">
+            <table className="w-full border-collapse text-start text-[14px]">
               <tbody>
                 {records.slice(0, 8).map(r => (
-                  <tr key={r.id} className="border-b border-black/10 last:border-0 dark:border-white/10">
+                  <tr key={r.id} className="border-b border-black/8 last:border-0 dark:border-white/12">
                     <td className="px-4 py-2.5">
                       <span className="tnum font-semibold">{courseById.get(r.attendance_sessions?.course_id)?.code ?? ""}</span>
-                      <span className="tnum block text-xs text-neutral-500">{new Date(r.scanned_at).toLocaleString(locale === "ar" ? "ar-EG" : "en-US")}</span>
+                      <span className="tnum block text-[11px] text-neutral-400">{new Date(r.scanned_at).toLocaleString(locale === "ar" ? "ar-EG" : "en-US")}</span>
                     </td>
                     <td className="px-4 py-2.5 text-end">
                       <StatusPill status={r.status} />
                       {(r.status === "absent" || r.status === "late") && !disputed.has(r.id) && (
-                        <button onClick={() => contest(r.id)} className="ms-2 min-h-[40px] rounded text-sm font-semibold text-register hover:underline">{t.contest}</button>
+                        <button onClick={() => contest(r.id)} className="ms-2 min-h-[36px] rounded text-[13px] font-semibold text-register hover:underline">{t.contest}</button>
                       )}
-                      {disputed.has(r.id) && <span className="ms-2 text-xs text-neutral-500">…</span>}
+                      {disputed.has(r.id) && <span className="ms-2 text-[11px] text-neutral-400">…</span>}
                     </td>
                   </tr>
                 ))}
@@ -475,35 +474,35 @@ export default function StudentHome() {
         <a href="/api/reports/export" className="mt-3 block"><Button variant="outline" className="w-full">{t.exportCsv}</Button></a>
       </section>
 
-      {/* excuses */}
+      {/* excuses — clean cards */}
       <section className="mt-7" aria-label={t.myExcuses}>
         <div className="flex items-center justify-between">
-          <h2 className="font-display flex items-center gap-2 text-xl font-bold"><FileText size={20} strokeWidth={2} /> {t.myExcuses}</h2>
-          <Button variant="outline" className="!min-h-[44px]" onClick={() => setShowExcuse(s => !s)}>{t.newExcuse}</Button>
+          <h2 className="font-display flex items-center gap-2 text-lg font-bold"><FileText size={18} strokeWidth={2} /> {t.myExcuses}</h2>
+          <Button variant="outline" className="!min-h-[40px] !text-[13px]" onClick={() => setShowExcuse(s => !s)}>{t.newExcuse}</Button>
         </div>
         {showExcuse && (
-          <div className="mt-2 grid gap-2 rounded-md2 border border-black/10 p-3 dark:border-white/15">
+          <div className="mt-2 grid gap-2 rounded-xl border border-black/8 p-3 dark:border-white/12">
             <select value={excForm.course_id} onChange={e => setExcForm({ ...excForm, course_id: e.target.value })}
-              className="min-h-[48px] w-full rounded-md2 border-2 border-black/15 bg-paper px-4 outline-none focus:border-register dark:border-white/20 dark:bg-white/5">
+              className="min-h-[44px] w-full rounded-lg border-2 border-black/12 bg-paper px-3 text-[14px] outline-none focus:border-register dark:border-white/18 dark:bg-white/5">
               <option value="">— {t.course}</option>
               {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
             </select>
             <textarea value={excForm.reason} onChange={e => setExcForm({ ...excForm, reason: e.target.value })} rows={3} dir="auto" placeholder={t.contestHint}
-              className="min-h-[72px] w-full rounded-md2 border-2 border-black/15 bg-paper px-3 py-2 outline-none focus:border-register dark:border-white/20 dark:bg-white/5" />
+              className="min-h-[64px] w-full rounded-lg border-2 border-black/12 bg-paper px-3 py-2 text-[14px] outline-none focus:border-register dark:border-white/18 dark:bg-white/5" />
             <Button onClick={sendExcuse}>{t.save}</Button>
           </div>
         )}
-        <div className="mt-2 divide-y divide-black/10 rounded-md2 border border-black/10 dark:divide-white/10 dark:border-white/15">
+        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
           {excuses.slice(0, 5).map((e: any) => (
-            <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
-              <span className="font-medium" dir="auto">{e.reason.slice(0, 60)}</span>
+            <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-[13px]">
+              <span className="truncate font-medium" dir="auto">{e.reason.slice(0, 60)}</span>
               <StatusPill status={e.status === "pending" ? "late" : e.status === "approved" ? "present" : "absent"} />
             </div>
           ))}
-          {excuses.length === 0 && <p className="p-4 text-sm text-neutral-500">—</p>}
+          {excuses.length === 0 && <p className="p-4 text-[13px] text-neutral-400">—</p>}
         </div>
-        <button onClick={requestDeviceReset} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md2 border border-black/15 text-sm font-semibold dark:border-white/20">
-          <Smartphone size={17} strokeWidth={2} /> {t.requestDeviceReset}
+        <button onClick={requestDeviceReset} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-black/12 text-[13px] font-semibold transition-colors hover:bg-black/[0.02] dark:border-white/18 dark:hover:bg-white/[0.03]">
+          <Smartphone size={16} strokeWidth={2} /> {t.requestDeviceReset}
         </button>
       </section>
     </main>
