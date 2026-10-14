@@ -1,5 +1,7 @@
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const viewport = { width: "device-width", initialScale: 1, maximumScale: 1, themeColor: "#1F2A33" };
 export const metadata = {
@@ -24,6 +26,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen bg-chalk font-body text-ink antialiased dark:bg-inkdeep dark:text-neutral-100">
         <Providers>{children}</Providers>
+        <Analytics />
+        <SpeedInsights />
         <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}` }} />
       </body>
     </html>

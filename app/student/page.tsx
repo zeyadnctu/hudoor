@@ -5,6 +5,7 @@ import { browserSupabase } from "@/lib/supabase";
 import { useApp } from "@/components/providers";
 import { Button, StatusPill, EmptyState, SkeletonRows } from "@/components/ui";
 import { getOrCreateDeviceId } from "@/lib/device";
+import { tickSessions } from "@/lib/session-tick";
 import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +38,7 @@ export default function StudentHome() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => { getOrCreateDeviceId(); }, []);
+  useEffect(() => { getOrCreateDeviceId(); tickSessions(); }, []);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);

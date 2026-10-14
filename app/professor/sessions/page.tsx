@@ -5,6 +5,7 @@ import { useApp } from "@/components/providers";
 import { Button, Input, Select, Label, StatusPill } from "@/components/ui";
 import { browserSupabase } from "@/lib/supabase";
 import { useMyProgram } from "@/lib/programs";
+import { tickSessions } from "@/lib/session-tick";
 import { Plus } from "lucide-react";
 
 export default function ProfSessionsPage() {
@@ -27,6 +28,7 @@ export default function ProfSessionsPage() {
     late_after_min: "", qr_interval_sec: ""
   });
 
+  useEffect(() => { tickSessions(); }, []);
   async function load() {
     const sb = browserSupabase();
     const { data: { user } } = await sb.auth.getUser();
