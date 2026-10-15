@@ -14,6 +14,11 @@ out
 .DS_Store
 tsconfig.tsbuildinfo
 .testbuild/
+bundle-report.json
+.lighthouseci/
 
 # agent environment (not app code)
 opencode.json
+
+.vercel
+.env*

@@ -6,16 +6,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { onboardingSchema } from "@/lib/validators";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp } from "@/components/providers";
-import { Button, Input, Select, Label, FieldError } from "@/components/ui";
-import { User, IdCard, School } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { LazyStepper, LazyBlurText } from "@/components/hudoor/bits";
+import { EmptyState } from "@/components/hudoor/empty-state";
+import { School } from "lucide-react";
 
 const DRAFT_KEY = "hudoor_onboarding_draft";
-const STEPS = [
-  { icon: <User size={20} strokeWidth={2} /> },
-  { icon: <IdCard size={20} strokeWidth={2} /> },
-  { icon: <School size={20} strokeWidth={2} /> }
-];
 
 export default function Onboarding() {
   const { t } = useApp();
@@ -73,15 +71,22 @@ export default function Onboarding() {
     })();
   }, [levelId]);
 
-  async function next() {
-    const fields = step === 0
-      ? ["full_name_ar", "full_name_en"]
-      : ["university_id", "phone"];
-    const ok = await trigger(fields as any);
-    if (ok) setStep(s => Math.min(2, s + 1));
+  /* gate: only advance a step when its fields validate */
+  async function handleStepChange(next: number) {
+    if (next > step) {
+      const fields = step === 0
+        ? ["full_name_ar", "full_name_en"]
+        : ["university_id", "phone"];
+      const ok = await trigger(fields as any);
+      if (!ok) return;
+    }
+    setStep(next);
   }
 
   async function submit(v: any) {
+    // final step validates program/level/section before leaving
+    const ok = await trigger(["program_id", "level_id", "section_id"] as any);
+    if (!ok) return;
     const sb = browserSupabase();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) { r.push("/login"); return; }
@@ -99,76 +104,101 @@ export default function Onboarding() {
 
   if (done) {
     return (
-      <main className="mx-auto w-full max-w-md px-5 py-16 text-center">
-        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-stamp-light text-stamp-dark dark:bg-stamp/20 dark:text-emerald-300">
-          <School size={32} strokeWidth={1.75} />
-        </div>
-        <h1 className="font-display mt-4 text-2xl font-bold">{t.onboardingDone}</h1>
-        <a href="/student" className="mt-6 block"><Button className="w-full">{t.myAttendance}</Button></a>
+      <main className="mx-auto w-full max-w-md px-4 py-16">
+        <EmptyState
+          icon={<School size={28} strokeWidth={2} />}
+          title={t.onboardingDone}
+          hint={t.checkEmailHint}
+          withGrid
+          action={<a href="/student" className="block"><Button className="w-full">{t.myAttendance}</Button></a>}
+        />
       </main>
     );
   }
 
+  const errText = (e: any) => (e ? "مطلوب / required" : undefined);
+
   return (
-    <main className="mx-auto w-full max-w-md px-5 py-8">
-      <h1 className="font-display text-3xl font-bold">{t.completeProfile}</h1>
-      <p className="mt-1 text-neutral-500">{t.askOnlyNeeded}</p>
+    <main className="dot-grid mx-auto w-full max-w-md px-4 py-8">
+      <h1 className="font-display text-3xl font-bold">
+        <LazyBlurText text={t.completeProfile} />
+      </h1>
+      <p className="mt-1 text-muted-foreground">{t.askOnlyNeeded}</p>
 
-      {/* progress: 3 segments, current filled */}
-      <div className="mt-5 flex gap-2" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={3} aria-label={`${t.stepOf} ${step + 1}/3`}>
-        {[0, 1, 2].map(i => (
-          <div key={i} className={cn("h-2 flex-1 rounded-full", i <= step ? "bg-register" : "bg-black/10 dark:bg-white/15")} />
-        ))}
-      </div>
-      <p className="tnum mt-2 flex items-center gap-2 text-sm font-semibold text-neutral-500">
-        {STEPS[step].icon} {t.stepOf} {step + 1}/3
-      </p>
-
-      <form onSubmit={handleSubmit(submit)} className="mt-5 space-y-4">
-        {step === 0 && (
-          <>
-            <div><Label>{t.fullNameAr}</Label><Input {...register("full_name_ar")} autoComplete="name" /><FieldError msg={errors.full_name_ar && "مطلوب / required"} /></div>
-            <div><Label>{t.fullNameEn}</Label><Input {...register("full_name_en")} autoComplete="name" /><FieldError msg={errors.full_name_en && "مطلوب / required"} /></div>
-          </>
-        )}
-        {step === 1 && (
-          <>
-            <div><Label>{t.universityId}</Label><Input {...register("university_id")} inputMode="numeric" /><FieldError msg={errors.university_id && "مطلوب / required"} /></div>
-            <div><Label>{t.phone}</Label><Input {...register("phone")} type="tel" autoComplete="tel" dir="ltr" /><FieldError msg={errors.phone && "مطلوب / required"} /></div>
-          </>
-        )}
-        {step === 2 && (
-          <>
-            <div><Label>{t.programs}</Label>
-              <Select {...register("program_id")}>
-                <option value="">—</option>
-                {progs.map(p => <option key={p.id} value={p.id}>{p.type === "partner" ? "★ " : ""}{p.code} · {p.name_ar}</option>)}
-              </Select>
-              <FieldError msg={errors.program_id && t.required} />
-            </div>
-            <div><Label>{t.level}</Label>
-              <Select {...register("level_id")} disabled={!progId}>
-                <option value="">—</option>
-                {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar} / {l.name_en}</option>)}
-              </Select>
-              <FieldError msg={errors.level_id && t.required} />
-            </div>
-            <div><Label>{t.group}</Label>
-              <Select {...register("section_id")} disabled={!levelId}>
-                <option value="">—</option>
-                {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </Select>
-              <FieldError msg={errors.section_id && t.required} />
-            </div>
-          </>
-        )}
-
-        <div className="flex gap-2 pt-2">
-          {step > 0 && <Button type="button" variant="outline" className="flex-1" onClick={() => setStep(s => s - 1)}>{t.back}</Button>}
-          {step < 2
-            ? <Button type="button" className="flex-[2]" onClick={next}>{t.next}</Button>
-            : <Button type="submit" variant="stamp" className="flex-[2]">{t.save}</Button>}
-        </div>
+      <form onSubmit={handleSubmit(submit)} className="mt-6">
+        <LazyStepper
+          step={step}
+          onStepChange={handleStepChange}
+          onCompleted={handleSubmit(submit) as () => void}
+          labels={{ back: t.back, next: t.next, complete: t.save }}
+          steps={[
+            {
+              title: t.fullName,
+              content: (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="full_name_ar">{t.fullNameAr}</Label>
+                    <Input id="full_name_ar" {...register("full_name_ar")} autoComplete="name" aria-invalid={!!errors.full_name_ar} />
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_ar)}</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="full_name_en">{t.fullNameEn}</Label>
+                    <Input id="full_name_en" {...register("full_name_en")} autoComplete="name" dir="ltr" aria-invalid={!!errors.full_name_en} />
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_en)}</p>
+                  </div>
+                </div>
+              )
+            },
+            {
+              title: t.universityId,
+              content: (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="university_id">{t.universityId}</Label>
+                    <Input id="university_id" {...register("university_id")} inputMode="numeric" dir="ltr" aria-invalid={!!errors.university_id} />
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.university_id)}</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="phone">{t.phone}</Label>
+                    <Input id="phone" {...register("phone")} type="tel" autoComplete="tel" dir="ltr" aria-invalid={!!errors.phone} />
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.phone)}</p>
+                  </div>
+                </div>
+              )
+            },
+            {
+              title: t.pickProgram,
+              content: (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="program_id">{t.programs}</Label>
+                    <select id="program_id" {...register("program_id")} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm">
+                      <option value="">—</option>
+                      {progs.map(p => <option key={p.id} value={p.id}>{p.type === "partner" ? "★ " : ""}{p.code} · {p.name_ar}</option>)}
+                    </select>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errors.program_id ? t.required : undefined}</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="level_id">{t.level}</Label>
+                    <select id="level_id" {...register("level_id")} disabled={!progId} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                      <option value="">—</option>
+                      {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar} / {l.name_en}</option>)}
+                    </select>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errors.level_id ? t.required : undefined}</p>
+                  </div>
+                  <div>
+                    <Label htmlFor="section_id">{t.group}</Label>
+                    <select id="section_id" {...register("section_id")} disabled={!levelId} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                      <option value="">—</option>
+                      {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errors.section_id ? t.required : undefined}</p>
+                  </div>
+                </div>
+              )
+            }
+          ]}
+        />
       </form>
     </main>
   );

@@ -351,7 +351,19 @@ const ar = {
   wednesday: "الأربعاء",
   thursday: "الخميس",
   friday: "الجمعة",
-  saturday: "السبت"
+  saturday: "السبت",
+  palette: "ابحث أو انتقل…",
+  mainNav: "التنقل",
+  actions: "إجراءات",
+  darkMode: "الوضع الداكن",
+  lightMode: "الوضع الفاتح",
+  stPresent: "حاضر",
+  stLate: "متأخر",
+  stAbsent: "غائب",
+  stExcused: "بعذر",
+  stActive: "نشطة",
+  stScheduled: "مجدولة",
+  stEnded: "انتهت"
 };
 
 export type Dict = typeof ar;
@@ -706,7 +718,19 @@ const en: Dict = {
   wednesday: "Wednesday",
   thursday: "Thursday",
   friday: "Friday",
-  saturday: "Saturday"
+  saturday: "Saturday",
+  palette: "Search or jump…",
+  mainNav: "Navigation",
+  actions: "Actions",
+  darkMode: "Dark mode",
+  lightMode: "Light mode",
+  stPresent: "Present",
+  stLate: "Late",
+  stAbsent: "Absent",
+  stExcused: "Excused",
+  stActive: "Live",
+  stScheduled: "Scheduled",
+  stEnded: "Ended"
 };
 
 export const dict: Record<Locale, Dict> = { ar, en };

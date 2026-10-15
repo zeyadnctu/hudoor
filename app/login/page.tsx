@@ -3,7 +3,10 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp, Controls } from "@/components/providers";
-import { Button, Input, Label, FieldError } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScanLine } from "lucide-react";
 
 export default function Login() {
   return (
@@ -44,18 +47,28 @@ function LoginInner() {
     await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${location.origin}/student` } });
   }
   return (
-    <main className="mx-auto min-h-screen w-full max-w-md px-5 py-8">
+    <main className="dot-grid mx-auto min-h-screen w-full max-w-md px-5 py-8">
       <div className="flex justify-end"><Controls /></div>
-      <h1 className="font-display mt-6 text-3xl font-bold">{t.login}</h1>
-      <form onSubmit={go} className="mt-6 space-y-4" noValidate>
+      <div className="mt-10 text-center">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-pill bg-primary text-primary-foreground">
+          <ScanLine size={26} strokeWidth={2} />
+        </span>
+        <h1 className="font-display mt-4 text-3xl font-bold">{t.app}</h1>
+        <p className="mt-1 text-[15px] text-muted-foreground">{t.tagline}</p>
+      </div>
+      <form onSubmit={go} className="mt-8 space-y-4" noValidate>
         <div><Label htmlFor="email">{t.email}</Label><Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" /></div>
         <div><Label htmlFor="pw">{t.password}</Label><Input id="pw" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" /></div>
-        <FieldError msg={err} />
+        {err && (
+          <p role="alert" className="rounded-base bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+            {err}
+          </p>
+        )}
         <Button className="w-full !min-h-[56px] !text-lg" disabled={busy}>{t.login}</Button>
       </form>
       <Button variant="outline" className="mt-3 w-full" onClick={google}>{t.continueGoogle}</Button>
-      <p className="mt-6 border-t border-ink/15 pt-4 text-center dark:border-white/15">
-        <a className="font-semibold text-register underline-offset-4 hover:underline" href="/signup">{t.noAccount}</a>
+      <p className="mt-6 border-t border-border pt-4 text-center">
+        <a className="font-semibold text-primary underline underline-offset-4" href="/signup">{t.noAccount}</a>
       </p>
     </main>
   );

@@ -1,48 +1,293 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-/* ===== Hudoor tokens ===== */
+/* Class-based dark mode (the app toggles .dark on <html>) */
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Hudoor premium theme — semantic tokens, light + dark, oklch.
+   Every fg/bg pair is WCAG-AA verified by scripts/palette-check.mjs
+   (run in CI). Semantic names only. Elevation = surface step + a
+   1px border; soft shadow only on floating layers (sheets,
+   popovers, the Scan action). No glassmorphism, no gradients.
+   ============================================================ */
+
 :root {
-  --ink: #1f2a33;
-  --chalk: #eef0ea;
-  --register: #2f5d8a;
-  --stamp: #2e9b5f;
-  --brick: #b5432e;
-  --hi: #d9a21b;
-  --hairline: #d4d8cc;
-  --motion-stamp: 480ms;
   color-scheme: light;
+  /* surfaces */
+  --background: oklch(96.8% 0.005 117.9); /* #F4F5F1 chalk, slightly lifted */
+  --foreground: oklch(25.5% 0.018 241.8); /* #1B242B */
+  --card: oklch(100% 0 0); /* #FFFFFF */
+  --card-foreground: oklch(25.5% 0.018 241.8);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(25.5% 0.018 241.8);
+  --muted: oklch(93.3% 0.01 125.7); /* #E7EAE3 */
+  --muted-foreground: oklch(50.4% 0.022 243.3); /* #5A6670 */
+  --border: oklch(89.2% 0.013 126.4); /* #D9DDD4 */
+  --input: oklch(84.4% 0.017 125.3); /* #C9CEC2 */
+  --ring: oklch(46.7% 0.089 249.8); /* #2F5D8A register */
+  --primary: oklch(46.7% 0.089 249.8);
+  --primary-foreground: oklch(100% 0 0);
+  --secondary: oklch(93.3% 0.01 125.7);
+  --secondary-foreground: oklch(25.5% 0.018 241.8);
+  --accent: oklch(93.8% 0.015 241.8); /* #E2ECF4 soft blue wash: hovers, selected rows */
+  --accent-foreground: oklch(25.5% 0.018 241.8);
+  --destructive: oklch(53.7% 0.152 32.5); /* #B5432E brick */
+  --destructive-foreground: oklch(100% 0 0);
+
+  /* status — ink = text, fill = graphics/bars, soft = chip ground */
+  --present-ink: oklch(45.4% 0.11 157);
+  --present-fill: oklch(61.3% 0.134 154.7); /* #2E9B5F stamp */
+  --present-soft: oklch(94.8% 0.033 151.5); /* #E2F2E8 */
+  --present-on-fill: oklch(21.2% 0.026 244.6); /* AA on present-fill in both themes */
+  --late-ink: oklch(43.6% 0.104 82.3);
+  --late-fill: oklch(62.5% 0.126 82.3); /* #AD7F0C highlighter, darkened */
+  --late-soft: oklch(95.6% 0.049 87); /* #F9EED3 */
+  --absent-ink: oklch(53.7% 0.152 32.5); /* #B5432E brick */
+  --absent-fill: oklch(53.7% 0.152 32.5);
+  --absent-soft: oklch(94.5% 0.028 34); /* #F8E9E4 */
+  --excused-ink: oklch(50.4% 0.022 243.3); /* #5A6670 */
+  --excused-fill: oklch(50.4% 0.022 243.3);
+  --excused-soft: oklch(93.3% 0.01 125.7);
+
+  /* program accents — badges + program chip ONLY, never large surfaces */
+  --program-ntg: oklch(50.8% 0.215 293);
+  --program-cn: oklch(52.6% 0.155 27);
+
+  /* sidebar alias (console; same system) */
+  --sidebar: oklch(100% 0 0);
+  --sidebar-foreground: oklch(25.5% 0.018 241.8);
+  --sidebar-primary: oklch(46.7% 0.089 249.8);
+  --sidebar-primary-foreground: oklch(100% 0 0);
+  --sidebar-accent: oklch(93.8% 0.015 241.8);
+  --sidebar-accent-foreground: oklch(25.5% 0.018 241.8);
+  --sidebar-border: oklch(89.2% 0.013 126.4);
+  --sidebar-ring: oklch(46.7% 0.089 249.8);
+
+  /* soft shadow, floating layers only */
+  --sheet-shadow: 0 12px 32px -12px rgb(16 24 32 / 0.28);
+  --pop-shadow: 0 8px 24px -10px rgb(16 24 32 / 0.24);
+  --scan-shadow: 0 10px 26px -8px oklch(46.7% 0.089 249.8 / 0.45);
 }
+
 .dark {
-  --hairline: #33414d;
   color-scheme: dark;
+  --background: oklch(20.4% 0.015 239.5); /* #11181D */
+  --foreground: oklch(93.9% 0.009 128.6); /* #E9ECE6 */
+  --card: oklch(23.9% 0.018 245); /* #182027 */
+  --card-foreground: oklch(93.9% 0.009 128.6);
+  --popover: oklch(26.3% 0.021 242.7); /* #1C262E */
+  --popover-foreground: oklch(93.9% 0.009 128.6);
+  --muted: oklch(29.1% 0.022 243.3); /* #222D36 */
+  --muted-foreground: oklch(69.9% 0.021 240.9); /* #93A0AA */
+  --border: oklch(33.1% 0.025 246.3); /* #2B3742 */
+  --input: oklch(39.4% 0.027 244.4); /* #3A4854 */
+  --ring: oklch(70% 0.096 249.8); /* #6FA3D8 */
+  --primary: oklch(70% 0.096 249.8);
+  --primary-foreground: oklch(21.2% 0.026 244.6); /* #0E1A24 */
+  --secondary: oklch(29.1% 0.022 243.3);
+  --secondary-foreground: oklch(93.9% 0.009 128.6);
+  --accent: oklch(30.5% 0.03 243); /* #22313D */
+  --accent-foreground: oklch(93.9% 0.009 128.6);
+  --destructive: oklch(67.1% 0.144 32.5); /* #E0705A */
+  --destructive-foreground: oklch(20% 0.02 240);
+
+  --present-ink: oklch(73.1% 0.141 156.7); /* #4CC283 */
+  --present-fill: oklch(73.1% 0.141 156.7);
+  --present-soft: oklch(27% 0.045 160);
+  --present-on-fill: oklch(21.2% 0.026 244.6);
+  --late-ink: oklch(80.7% 0.145 87); /* #E8B93E */
+  --late-fill: oklch(80.7% 0.145 87);
+  --late-soft: oklch(29% 0.04 85);
+  --absent-ink: oklch(67.1% 0.144 32.5); /* #E0705A */
+  --absent-fill: oklch(67.1% 0.144 32.5);
+  --absent-soft: oklch(28% 0.045 30);
+  --excused-ink: oklch(69.9% 0.021 240.9); /* #93A0AA */
+  --excused-fill: oklch(69.9% 0.021 240.9);
+  --excused-soft: oklch(29.1% 0.022 243.3);
+
+  --program-ntg: oklch(72% 0.16 293);
+  --program-cn: oklch(70% 0.13 27);
+
+  --sidebar: oklch(23.9% 0.018 245);
+  --sidebar-foreground: oklch(93.9% 0.009 128.6);
+  --sidebar-primary: oklch(70% 0.096 249.8);
+  --sidebar-primary-foreground: oklch(21.2% 0.026 244.6);
+  --sidebar-accent: oklch(30.5% 0.03 243);
+  --sidebar-accent-foreground: oklch(93.9% 0.009 128.6);
+  --sidebar-border: oklch(33.1% 0.025 246.3);
+  --sidebar-ring: oklch(70% 0.096 249.8);
+
+  --sheet-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  --pop-shadow: 0 8px 24px -10px rgb(0 0 0 / 0.55);
+  --scan-shadow: 0 10px 26px -8px oklch(70% 0.096 249.8 / 0.4);
 }
 
-html { scroll-behavior: smooth; }
-body {
-  font-family: "IBM Plex Sans Arabic", "Readex Pro", system-ui, sans-serif;
-  line-height: 1.7;
-  -webkit-tap-highlight-color: transparent;
-}
-.font-display { font-family: "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif; }
-.tnum { font-variant-numeric: tabular-nums; }
+@theme inline {
+  /* semantic (theme-swapping) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
-/* visible keyboard focus everywhere */
-:focus-visible {
-  outline: 3px solid var(--register);
-  outline-offset: 2px;
-  border-radius: 4px;
+  /* status */
+  --color-present: var(--present-ink);
+  --color-present-ink: var(--present-ink);
+  --color-present-fill: var(--present-fill);
+  --color-present-soft: var(--present-soft);
+  --color-present-on-fill: var(--present-on-fill);
+  --color-late: var(--late-ink);
+  --color-late-ink: var(--late-ink);
+  --color-late-fill: var(--late-fill);
+  --color-late-soft: var(--late-soft);
+  --color-absent: var(--absent-ink);
+  --color-absent-ink: var(--absent-ink);
+  --color-absent-fill: var(--absent-fill);
+  --color-absent-soft: var(--absent-soft);
+  --color-excused: var(--excused-ink);
+  --color-excused-ink: var(--excused-ink);
+  --color-excused-fill: var(--excused-fill);
+  --color-excused-soft: var(--excused-soft);
+
+  --color-program-ntg: var(--program-ntg);
+  --color-program-cn: var(--program-cn);
+
+  /* sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* data viz — restrained: primary + status fills; direct labels, no gradients */
+  --color-chart-1: var(--primary);
+  --color-chart-2: var(--present-fill);
+  --color-chart-3: var(--late-fill);
+  --color-chart-4: var(--absent-fill);
+  --color-chart-muted: var(--muted-foreground);
 }
 
-/* register ruled paper (texture of the product, not decoration) */
+/* plain @theme: emitted as real :root vars so custom classes can use them */
+@theme {
+  /* radius scale from one 10px base:
+     inputs/buttons = base (10) · cards = base+4 (14) · sheets = base+10 (20) · pills = full */
+  --radius: 0.625rem;
+  --radius-base: 10px;
+  --radius-card: 14px;
+  --radius-sheet: 20px;
+  --radius-pill: 9999px;
+  --radius-sm: calc(0.625rem - 4px);
+  --radius-md: calc(0.625rem - 2px);
+  --radius-lg: 0.625rem;
+  --radius-xl: calc(0.625rem + 4px);
+  --radius-2xl: calc(0.625rem + 10px);
+
+  /* motion tokens — one ease-out curve + one spring, reused everywhere */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  /* type (font variables come from next/font in app/layout.tsx) */
+  --font-display: var(--font-readex), "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-body: var(--font-plex-ar), "IBM Plex Sans Arabic", "Readex Pro", system-ui, sans-serif;
+
+  /* floating-layer shadows */
+  --shadow-sheet: var(--sheet-shadow);
+  --shadow-pop: var(--pop-shadow);
+  --shadow-scan: var(--scan-shadow);
+}
+
+/* legacy tokens — admin/professor console screens still use these names */
+@theme {
+  --color-ink: #1f2a33;
+  --color-inkdeep: #141b22;
+  --color-inksurface: #222e38;
+  --color-chalk: #eef0ea;
+  --color-paper: #ffffff;
+  --color-register: #2f5d8a;
+  --color-register-dark: #24506f;
+  --color-register-light: #e4edf4;
+  --color-stamp: #2e9b5f;
+  --color-stamp-dark: #227346;
+  --color-stamp-light: #e2f2e8;
+  --color-brick: #b5432e;
+  --color-brick-dark: #93341f;
+  --color-brick-light: #f7e4de;
+  --color-hi: #d9a21b;
+  --color-hi-dark: #a87b0e;
+  --color-hi-light: #f9eed3;
+  --radius-sm2: 6px;
+  --radius-md2: 10px;
+  --radius-lg2: 16px;
+  --radius-frame: 4px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: var(--font-body);
+    line-height: 1.7;
+    background: var(--background);
+    color: var(--foreground);
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* visible keyboard focus everywhere */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* tabular numerals for times, counts, percentages */
+  .tnum,
+  input[type="number"] {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* register ruled paper (the product's texture, not decoration) */
 .ruled {
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
     transparent 35px,
-    color-mix(in srgb, var(--register) 14%, transparent) 35px,
-    color-mix(in srgb, var(--register) 14%, transparent) 36px
+    color-mix(in srgb, var(--primary) 14%, transparent) 35px,
+    color-mix(in srgb, var(--primary) 14%, transparent) 36px
   );
 }
 .ruled-tight {
@@ -50,33 +295,68 @@ body {
     to bottom,
     transparent 0,
     transparent 27px,
-    color-mix(in srgb, var(--register) 12%, transparent) 27px,
-    color-mix(in srgb, var(--register) 12%, transparent) 28px
+    color-mix(in srgb, var(--primary) 12%, transparent) 27px,
+    color-mix(in srgb, var(--primary) 12%, transparent) 28px
   );
 }
 
-/* ===== stamp press: the single memorable motion ===== */
-@keyframes stampPress {
-  0% { opacity: 0; transform: scale(2.1) rotate(-14deg); }
-  55% { opacity: 1; transform: scale(0.94) rotate(-5deg); }
-  75% { transform: scale(1.03) rotate(-6.5deg); }
-  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+/* dot-grid: the one quiet background (login, onboarding intro, large empty
+   states). Token-tinted, slow drift; fully static under reduced motion. */
+.dot-grid {
+  background-image: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--foreground) 11%, transparent) 1px,
+    transparent 1.4px
+  );
+  background-size: 22px 22px;
+  animation: dotDrift 90s linear infinite;
 }
-.stamp-press { animation: stampPress var(--motion-stamp) cubic-bezier(0.2, 0.9, 0.25, 1.2) both; }
+@keyframes dotDrift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 220px 220px;
+  }
+}
+
+/* stamp press: the single memorable motion */
+@keyframes stampPress {
+  0% {
+    opacity: 0;
+    transform: scale(2.1) rotate(-14deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.94) rotate(-5deg);
+  }
+  75% {
+    transform: scale(1.03) rotate(-6.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-6deg);
+  }
+}
+.stamp-press {
+  animation: stampPress var(--duration-slow) var(--ease-spring) both;
+}
 
 /* draining QR frame: linear drain over the token TTL */
-.qr-drain { transition: stroke-dashoffset 1s linear; }
+.qr-drain {
+  transition: stroke-dashoffset 1s linear;
+}
 
 /* skeleton blocks that match layout (never whole-page spinners) */
 @keyframes skeletonPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
-.skeleton { animation: skeletonPulse 1.4s ease-in-out infinite; }
-
-@media (prefers-reduced-motion: reduce) {
-  .stamp-press { animation-duration: 1ms; }
-  .skeleton { animation: none; }
-  .qr-drain { transition: none; }
-  html { scroll-behavior: auto; }
+.skeleton {
+  animation: skeletonPulse 1.4s ease-in-out infinite;
 }

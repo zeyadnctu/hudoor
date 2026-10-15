@@ -1,11 +1,15 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useApp } from "@/components/providers";
-import { Button, Stamp } from "@/components/ui";
+import { Button } from "@/components/ui/button";
 import { getOrCreateDeviceId } from "@/lib/device";
+import { StampResult } from "@/components/hudoor/stamp-result";
+import { EmptyState } from "@/components/hudoor/empty-state";
+import { CardSkeleton } from "@/components/hudoor/skeletons";
 import {
-  CheckCircle2, XCircle, WifiOff, RefreshCw, ScanLine, ClipboardList,
+  WifiOff, RefreshCw, ScanLine, ClipboardList,
   MapPin, Smartphone, Clock, UserX, AlertTriangle
 } from "lucide-react";
 
@@ -14,37 +18,37 @@ type Result = { status: string; code: string; message: string; course?: any; tim
 function codeCopy(t: any, code: string): { title: string; fix: string; icon: React.ReactNode } {
   switch (code) {
     case "expired_code": case "bad_token":
-      return { title: t.err_expired, fix: t.err_expired_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+      return { title: t.err_expired, fix: t.err_expired_fix, icon: <Clock size={28} strokeWidth={2} /> };
     case "not_enrolled":
-      return { title: t.err_enrolled, fix: t.err_enrolled_fix, icon: <UserX size={40} strokeWidth={1.75} /> };
+      return { title: t.err_enrolled, fix: t.err_enrolled_fix, icon: <UserX size={28} strokeWidth={2} /> };
     case "wrong_device":
-      return { title: t.err_device, fix: t.err_device_fix, icon: <Smartphone size={40} strokeWidth={1.75} /> };
+      return { title: t.err_device, fix: t.err_device_fix, icon: <Smartphone size={28} strokeWidth={2} /> };
     case "device_conflict":
-      return { title: t.err_device_conflict, fix: t.err_device_fix, icon: <Smartphone size={40} strokeWidth={1.75} /> };
+      return { title: t.err_device_conflict, fix: t.err_device_fix, icon: <Smartphone size={28} strokeWidth={2} /> };
     case "outside_hall":
-      return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
+      return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={28} strokeWidth={2} /> };
     case "no_location":
-      return { title: t.err_location, fix: t.err_location_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
+      return { title: t.err_location, fix: t.err_location_fix, icon: <MapPin size={28} strokeWidth={2} /> };
     case "mock_location":
-      return { title: t.err_mock, fix: t.err_mock_fix, icon: <AlertTriangle size={40} strokeWidth={1.75} /> };
+      return { title: t.err_mock, fix: t.err_mock_fix, icon: <AlertTriangle size={28} strokeWidth={2} /> };
     case "low_accuracy":
-      return { title: t.err_weak_gps, fix: t.err_weak_gps_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
+      return { title: t.err_weak_gps, fix: t.err_weak_gps_fix, icon: <MapPin size={28} strokeWidth={2} /> };
     case "session_closed":
-      return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+      return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={28} strokeWidth={2} /> };
     case "session_paused":
-      return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+      return { title: t.err_closed, fix: t.err_closed_fix, icon: <Clock size={28} strokeWidth={2} /> };
     case "too_late":
-      return { title: t.err_late, fix: t.err_late_fix, icon: <Clock size={40} strokeWidth={1.75} /> };
+      return { title: t.err_late, fix: t.err_late_fix, icon: <Clock size={28} strokeWidth={2} /> };
     case "outside_campus":
-      return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={40} strokeWidth={1.75} /> };
+      return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={28} strokeWidth={2} /> };
     case "not_eligible":
-      return { title: t.err_pending, fix: t.err_pending_fix, icon: <ClipboardList size={40} strokeWidth={1.75} /> };
+      return { title: t.err_pending, fix: t.err_pending_fix, icon: <ClipboardList size={28} strokeWidth={2} /> };
     case "unauthenticated":
-      return { title: t.err_login, fix: t.err_login_fix, icon: <UserX size={40} strokeWidth={1.75} /> };
+      return { title: t.err_login, fix: t.err_login_fix, icon: <UserX size={28} strokeWidth={2} /> };
     case "rate_limited":
-      return { title: t.err_rate, fix: t.err_rate_fix, icon: <AlertTriangle size={40} strokeWidth={1.75} /> };
+      return { title: t.err_rate, fix: t.err_rate_fix, icon: <AlertTriangle size={28} strokeWidth={2} /> };
     default:
-      return { title: code, fix: "", icon: <XCircle size={40} strokeWidth={1.75} /> };
+      return { title: code, fix: "", icon: <AlertTriangle size={28} strokeWidth={2} /> };
   }
 }
 
@@ -90,48 +94,39 @@ function ScanInner() {
     return () => { cancelled = true; };
   }, [token]);
 
-  const shell = "mx-auto min-h-screen w-full max-w-md bg-paper dark:bg-inksurface";
-
   if (!online) {
     return (
-      <main className={shell}>
-        <div className="px-5 py-16 text-center">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brick-light text-brick-dark dark:bg-brick/20 dark:text-red-300">
-            <WifiOff size={32} strokeWidth={1.75} />
-          </div>
-          <h1 className="font-display mt-4 text-2xl font-bold">{t.err_offline}</h1>
-          <p className="mt-2 text-neutral-600 dark:text-neutral-300">{t.err_offline_fix}</p>
-          <Button className="mt-6 w-full" onClick={() => location.reload()}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>
-        </div>
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<WifiOff size={28} />}
+          title={t.err_offline}
+          hint={t.err_offline_fix}
+          withGrid
+          action={<Button onClick={() => location.reload()}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
+        />
       </main>
     );
   }
 
   if (!token) {
     return (
-      <main className={shell}>
-        <div className="px-5 py-16 text-center">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-register-light text-register-dark dark:bg-register/25 dark:text-sky-300">
-            <ScanLine size={32} strokeWidth={1.75} />
-          </div>
-          <h1 className="font-display mt-4 text-2xl font-bold">{t.scanToAttend}</h1>
-          <p className="mt-2 text-neutral-600 dark:text-neutral-300">{t.scanHint}</p>
-          <a href="/student/scan-in-app" className="mt-6 block"><Button className="w-full">{t.openScanner}</Button></a>
-        </div>
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<ScanLine size={28} />}
+          title={t.scanToAttend}
+          hint={t.scanHint}
+          withGrid
+          action={<Link href="/student/scan-in-app" className="block"><Button className="w-full">{t.openScanner}</Button></Link>}
+        />
       </main>
     );
   }
 
   if (!res) {
     return (
-      <main className={shell} aria-busy="true" aria-label={t.marking}>
-        <div className="ruled-tight px-5 py-8">
-          <div className="skeleton h-7 w-2/3 rounded bg-black/10 dark:bg-white/15" />
-          <div className="skeleton mt-2 h-5 w-1/2 rounded bg-black/10 dark:bg-white/15" />
-          <div className="mx-auto mt-10 h-36 w-64 rounded-frame border-4 border-black/10 dark:border-white/15" />
-          <div className="skeleton mx-auto mt-8 h-5 w-40 rounded bg-black/10 dark:bg-white/15" />
-          <p className="mt-4 text-center text-sm text-neutral-500">{t.verifying}</p>
-        </div>
+      <main className="mx-auto w-full max-w-md px-4 py-8" aria-busy="true" aria-label={t.marking}>
+        <CardSkeleton rows={2} />
+        <p className="mt-4 text-center text-sm text-muted-foreground">{t.verifying}</p>
       </main>
     );
   }
@@ -142,41 +137,36 @@ function ScanInner() {
     const time = res.time ? new Date(res.time) : new Date();
     const hhmmss = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) as string;
     return (
-      <main className={shell}>
-        {/* register page */}
-        <div className="ruled px-5 py-8">
-          <p className="text-sm font-semibold text-neutral-500">{t.courseName}</p>
-          <h1 className="font-display text-3xl font-bold leading-snug">
+      <main className="mx-auto w-full max-w-md px-4 py-8">
+        {/* the register page: ruled paper, one stamp, one headline */}
+        <div className="ruled rounded-card border border-border bg-card px-5 py-6">
+          <p className="text-sm font-semibold text-muted-foreground">{t.courseName}</p>
+          <h1 className="font-display text-3xl font-bold leading-snug" dir="auto">
             {res.course?.name_ar ?? res.course?.name_en ?? ""}
           </h1>
-          <p className="tnum font-display text-lg font-semibold text-register">{res.course?.code ?? ""}</p>
+          <p className="tnum font-display text-lg font-semibold text-primary">{res.course?.code ?? ""}</p>
 
-          <div className="py-10 text-center">
-            <Stamp
-              top={already ? t.alreadyRecorded : late ? t.lateStamp : t.presentStamp}
-              bottom={hhmmss}
-              tone={already || late ? "hi" : "stamp"}
-            />
-            <p className="mt-4 flex items-center justify-center gap-2 text-lg font-semibold text-stamp-dark dark:text-emerald-300">
-              <CheckCircle2 size={22} strokeWidth={2} />
-              {already ? t.alreadyHint : late ? t.markedLate : t.markedPresent}
-            </p>
-          </div>
+          <StampResult
+            stamp={already ? t.alreadyRecorded : late ? t.lateStamp : t.presentStamp}
+            timeLabel={hhmmss}
+            tone={already || late ? "late" : "present"}
+            headline={already ? t.alreadyHint : late ? t.markedLate : t.markedPresent}
+          />
 
-          <dl className="border-t-2 border-black/15 text-[15px] dark:border-white/20">
-            <div className="flex justify-between border-b border-black/10 py-2.5 dark:border-white/10">
-              <dt className="text-neutral-500">{t.time}</dt>
+          <dl className="border-t border-border text-[15px]">
+            <div className="flex justify-between border-b border-border py-2.5">
+              <dt className="text-muted-foreground">{t.time}</dt>
               <dd className="tnum font-semibold">{time.toLocaleString()}</dd>
             </div>
-            <div className="flex justify-between border-b border-black/10 py-2.5 dark:border-white/10">
-              <dt className="text-neutral-500">{t.method}</dt>
+            <div className="flex justify-between border-b border-border py-2.5">
+              <dt className="text-muted-foreground">{t.method}</dt>
               <dd className="font-semibold">{t.scanMethod}</dd>
             </div>
           </dl>
 
-          <a href="/student" className="sticky bottom-4 mt-8 block">
+          <Link href="/student" className="sticky bottom-4 mt-8 block">
             <Button className="w-full !min-h-[56px] !text-lg">{t.myAttendance}</Button>
-          </a>
+          </Link>
         </div>
       </main>
     );
@@ -185,25 +175,23 @@ function ScanInner() {
   const c = codeCopy(t, res.code === "offline" ? "rate_limited" : res.code);
   const offline = res.code === "offline";
   return (
-    <main className={shell}>
-      <div className="px-5 py-12">
-        <div className="rounded-lg2 border-2 border-brick/40 bg-brick-light/50 p-6 text-center dark:border-brick/50 dark:bg-brick/10">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brick text-white">
-            {offline ? <WifiOff size={32} strokeWidth={1.75} /> : c.icon}
+    <main className="mx-auto w-full max-w-md px-4 py-10">
+      <EmptyState
+        icon={offline ? <WifiOff size={28} /> : c.icon}
+        title={offline ? t.err_offline : c.title}
+        hint={offline ? t.err_offline_fix : c.fix}
+        action={
+          <div className="space-y-2">
+            {res.message && !offline && <p className="tnum text-sm text-muted-foreground" dir="auto">{res.message}</p>}
+            <Button className="w-full" onClick={() => location.reload()}>
+              <RefreshCw size={18} strokeWidth={2} /> {t.retry}
+            </Button>
+            <Link href="/student/scan-in-app" className="block">
+              <Button variant="outline" className="w-full"><ScanLine size={18} strokeWidth={2} /> {t.openScanner}</Button>
+            </Link>
           </div>
-          <h1 className="font-display mt-4 text-2xl font-bold text-brick-dark dark:text-red-200">
-            {offline ? t.err_offline : c.title}
-          </h1>
-          <p className="mt-2 text-[15px] text-neutral-700 dark:text-neutral-200">{offline ? t.err_offline_fix : c.fix}</p>
-          {!offline && res.message && <p className="tnum mt-1 text-sm text-neutral-500" dir="auto">{res.message}</p>}
-        </div>
-        <Button className="mt-6 w-full !min-h-[56px] !text-lg" onClick={() => location.reload()}>
-          <RefreshCw size={18} strokeWidth={2} /> {t.retry}
-        </Button>
-        <a href="/student/scan-in-app" className="mt-3 block">
-          <Button variant="outline" className="w-full"><ScanLine size={18} strokeWidth={2} /> {t.openScanner}</Button>
-        </a>
-      </div>
+        }
+      />
     </main>
   );
 }

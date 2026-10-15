@@ -1,11 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp } from "@/components/providers";
-import { Button, Select, EmptyState } from "@/components/ui";
-import { ChevronRight, ChevronLeft, Clock, MapPin, User } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui";
+import { Clock, CalendarDays, List } from "lucide-react";
+import { WeekGrid, WeekGridSkeleton, type WeekDay } from "@/components/hudoor/week-grid";
+import { TimelineRow } from "@/components/hudoor/timeline-row";
+import { SegmentedControl } from "@/components/hudoor/segmented-control";
+import { EmptyState } from "@/components/hudoor/empty-state";
 
 const DAY_NAMES_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const DAY_NAMES_EN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -30,7 +34,8 @@ export default function StudentTimetable() {
   const [sem, setSem] = useState("");
   const [loading, setLoading] = useState(true);
   const [program, setProgram] = useState<any>(null);
-  const days = [6, 0, 1, 2, 3, 4, 5];
+  const [view, setView] = useState<"weekly" | "list">("weekly");
+  const dayOrder = [6, 0, 1, 2, 3, 4, 5]; // Saturday-first for the region
 
   useEffect(() => {
     (async () => {
@@ -66,11 +71,44 @@ export default function StudentTimetable() {
     })();
   }, [sem]);
 
-  const byDay = (d: number) => slots.filter(s => s.day === d);
   const timeOf = (iso: string) => {
     const m = String(iso).match(/(\d{2}:\d{2})/);
     return m ? m[1] : iso;
   };
+
+  const weekDays: WeekDay[] = useMemo(
+    () =>
+      dayOrder
+        .map((d) => ({
+          key: d,
+          label: locale === "ar" ? DAY_NAMES_AR[d] : DAY_NAMES_EN[d],
+          slots: slots
+            .filter(s => s.day === d)
+            .sort((a, b) => timeOf(a.starts_at).localeCompare(timeOf(b.starts_at)))
+            .map(s => ({
+              id: s.id,
+              start: timeOf(s.starts_at),
+              end: timeOf(s.ends_at),
+              code: s.courses?.code,
+              name: locale === "ar" ? (s.courses?.name_ar ?? "") : (s.courses?.name_en ?? ""),
+              room: s.rooms ? (locale === "ar" ? s.rooms.name_ar : s.rooms.name_en) : undefined,
+              instructor: s.instructor_name ?? undefined,
+              type: s.session_type ?? undefined
+            }))
+        }))
+        .filter(d => d.slots.length > 0),
+    [slots, locale]
+  );
+
+  const flatList = useMemo(
+    () =>
+      weekDays.flatMap(d =>
+        d.slots.map(s => ({ ...s, dayLabel: d.label }))
+      ),
+    [weekDays]
+  );
+
+  const todayIdx = new Date().getDay(); // 0=Sun; dayOrder maps 6 first
 
   return (
     <div>
@@ -78,91 +116,76 @@ export default function StudentTimetable() {
         <div>
           <h1 className="font-display text-3xl font-bold">{t.weeklyTimetable}</h1>
           {program && (
-            <span className="mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold"
-              style={{ backgroundColor: (program.color ?? "#7C3AED") + "22", color: program.color ?? "#7C3AED" }}>
+            <span className="mt-1 inline-flex items-center gap-1.5 rounded-pill bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
               {locale === "ar" ? program.name_ar : program.name_en} · {program.code}
             </span>
           )}
         </div>
-        {semesters.length > 1 && (
-          <div className="w-56">
-            <Select value={sem} onChange={e => setSem(e.target.value)}>
-              {semesters.map(s => (
-                <option key={s.id} value={s.id}>{s.name}{s.is_current ? " ●" : ""}</option>
-              ))}
-            </Select>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {semesters.length > 1 && (
+            <div className="w-44">
+              <Select value={sem} onChange={e => setSem(e.target.value)}>
+                {semesters.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}{s.is_current ? " ●" : ""}</option>
+                ))}
+              </Select>
+            </div>
+          )}
+          <SegmentedControl
+            value={view}
+            onValueChange={setView}
+            ariaLabel={t.weeklyView}
+            options={[
+              { value: "weekly", label: t.weeklyView, icon: <CalendarDays size={14} /> },
+              { value: "list", label: t.listView, icon: <List size={14} /> }
+            ]}
+          />
+        </div>
       </div>
 
       {loading ? (
-        <div className="mt-6 animate-pulse space-y-3">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-24 rounded-md2 bg-black/5 dark:bg-white/5" />)}
-        </div>
+        <div className="mt-6"><WeekGridSkeleton /></div>
       ) : slots.length === 0 ? (
-        <EmptyState icon={<Clock size={28} className="text-neutral-400" />} title={locale === "ar" ? "لا توجد حصص مجدولة بعد" : "No sessions scheduled yet"} hint={locale === "ar" ? "سيظهر جدولك هنا عندما يتم تسجيل الحصص" : "Your schedule will appear here once sessions are enrolled"} />
+        <div className="mt-6">
+          <EmptyState
+            icon={<Clock size={28} />}
+            title={locale === "ar" ? "لا توجد حصص مجدولة بعد" : "No sessions scheduled yet"}
+            hint={locale === "ar" ? "سيظهر جدولك هنا عندما يتم تسجيل الحصص" : "Your schedule will appear here once sessions are enrolled"}
+            withGrid
+          />
+        </div>
+      ) : view === "weekly" ? (
+        <div className="mt-4">
+          <WeekGrid days={weekDays} todayKey={todayIdx} locale={locale} emptyHint={t.noSessionsToday} />
+        </div>
       ) : (
-        <div className="mt-4 space-y-3">
-          {days.map(d => {
-            const daySlots = byDay(d);
-            if (!daySlots.length) return null;
-            return (
-              <div key={d}>
-                <h2 className="mb-1.5 font-display text-sm font-bold text-neutral-500">
-                  {locale === "ar" ? DAY_NAMES_AR[d] : DAY_NAMES_EN[d]}
-                  <span className="tnum ms-2 text-xs">({daySlots.length})</span>
-                </h2>
-                <div className="space-y-1.5">
-                  {daySlots
-                    .sort((a, b) => timeOf(a.starts_at).localeCompare(timeOf(b.starts_at)))
-                    .map(s => {
-                      const isNTG = program?.code === "NTG";
-                      return (
-                        <div key={s.id}
-                          className={cn(
-                            "flex items-center gap-3 rounded-md2 border p-3",
-                            isNTG
-                              ? "border-purple-200 bg-purple-50/60 dark:border-purple-800/50 dark:bg-purple-950/20"
-                              : "border-black/10 dark:border-white/15"
-                          )}>
-                          <div className="tnum flex shrink-0 items-center gap-1 text-sm font-bold text-register">
-                            <Clock size={14} strokeWidth={2} />
-                            {timeOf(s.starts_at)}–{timeOf(s.ends_at)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-bold" dir="auto">
-                              {s.courses?.code && <span className="tnum text-register">{s.courses.code} · </span>}
-                              {locale === "ar" ? s.courses?.name_ar : s.courses?.name_en}
-                            </p>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-neutral-500">
-                              {s.instructor_name && (
-                                <span className="flex items-center gap-1"><User size={12} /> {s.instructor_name}</span>
-                              )}
-                              {s.rooms && (
-                                <span className="flex items-center gap-1"><MapPin size={12} /> {locale === "ar" ? s.rooms.name_ar : s.rooms.name_en}</span>
-                              )}
-                              {s.session_type && (
-                                <span className="rounded-full bg-black/5 px-2 py-0.5 font-semibold dark:bg-white/10">
-                                  {s.session_type === "lecture" ? (locale === "ar" ? "محاضرة" : "Lecture") : s.session_type === "section" ? (locale === "ar" ? "مجموعة" : "Section") : s.session_type}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            );
-          })}
+        <div className="mt-4 divide-y divide-border rounded-card border border-border bg-card">
+          {flatList.map(s => (
+            <TimelineRow
+              key={s.id}
+              startTime={s.start}
+              endTime={s.end}
+              courseCode={s.code}
+              courseName={s.name}
+              room={[s.dayLabel, s.room].filter(Boolean).join(" · ")}
+              trailing={
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  {s.type && (
+                    <span className="rounded-pill bg-muted px-2 py-0.5 text-xs font-semibold">
+                      {s.type === "lecture" ? (locale === "ar" ? "محاضرة" : "Lecture") : s.type === "section" ? (locale === "ar" ? "مجموعة" : "Section") : s.type}
+                    </span>
+                  )}
+                  {s.instructor && <span className="text-xs text-muted-foreground">{s.instructor}</span>}
+                </span>
+              }
+            />
+          ))}
         </div>
       )}
 
       <div className="mt-4 flex items-center gap-2">
         <Link href="/student">
-          <Button variant="outline">
-            <ChevronRight size={16} /> {locale === "ar" ? "رجوع" : "Back"}
-          </Button>
+          <Button variant="outline">{locale === "ar" ? "رجوع" : "Back"}</Button>
         </Link>
       </div>
     </div>

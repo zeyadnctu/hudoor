@@ -36,11 +36,34 @@ University (NCTU) with NCTU (NTG) as the initial partner program.
 | command | what |
 |---|---|
 | `npm run dev` | dev server |
-| `npm run build` | production build |
+| `npm run build` | production build (also compiles `sw.js` via Serwist) |
 | `npm test` | tsc compile of lib + node tests |
 | `npm run lint` | next lint |
+| `npm run verify:palette` | WCAG AA contrast check of every token pair, both themes |
+| `npm run bundle:report` | build + per-route First Load JS report vs budgets (`bundle-report.json`) |
 
 Tests: `tests/permissions.test.mjs`, `tests/recurrence.test.mjs`, `tests/ntg-pdf.test.mjs` (skipped).
+
+CI (`.github/workflows/ci.yml`) additionally runs the bundle budget (fails if `/student`
+or the scanner routes exceed their caps) and Lighthouse. Lighthouse has no login flow, so
+it audits the public routes that exercise the same token theme and AA contrast —
+`/scan`, `/login`, `/`. The `/student` (Today) and `/student/timetable` (attendance)
+screens sit behind middleware auth and would redirect to `/login`; auditing them directly
+would require seeding a test-student session in CI.
+
+## Design system
+
+Student UI is built on a tokenized theme (`app/globals.css`, oklch, light + dark):
+
+- **Base**: shadcn/ui primitives (Radix + CVA) restyled through tokens; Tailwind v4 `@theme`.
+- **Icons**: `lucide-react` only, single stroke weight.
+- **i18n/RTL**: `next-intl` (ar/en) + `next-themes` (light/dark).
+- **Components**: in-house set under `components/hudoor/` (StatusPill, NextClassCard,
+  WeekGrid, SemesterHeatmap, BottomSheet, CommandPalette, Toast, …). Dev-only reference
+  page at `/design`.
+- **React Bits (exactly 4, lazy-loaded, static fallback, reduced-motion aware)**:
+  CountUp, BlurText, AnimatedList, Stepper (`components/hudoor/bits.tsx`). None appear on
+  the scanner/camera routes, Present stamp, tables, forms, or professor QR screens.
 
 ## Roles
 
@@ -52,7 +75,7 @@ Tests: `tests/permissions.test.mjs`, `tests/recurrence.test.mjs`, `tests/ntg-pdf
 
 ## Architecture at a glance
 
-- `app/` Next.js 14 pages + API routes (dynamic)
+- `app/` Next.js 14 pages + API routes (dynamic); `app/sw.ts` is the Serwist service worker (`/sw.js`), `app/design` is a dev-only token/component reference
 - `lib/` guard, permissions, supabase server/client, recurrence, validators, i18n, programs, settings
 - `components/` console + UI primitives, app-nav, student-bottom-nav
 - `supabase/` migrations (001-006) + seed (`seed_ntg_2026.sql`)

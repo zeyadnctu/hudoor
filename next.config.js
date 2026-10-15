@@ -23,15 +23,31 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' " +
+              "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' " +
               (process.env.NEXT_PUBLIC_SUPABASE_URL || "") +
-              " https://*.vercel-insights.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self';",
+              " https://*.vercel-insights.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self';",
           },
           { key: "Permissions-Policy", value: "camera=(self), geolocation=(self), microphone=()" },
+        ],
+      },
+      {
+        // the service worker itself must never be cached
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
         ],
       },
     ];
   },
 };
 
-module.exports = nextConfig;
+// Serwist: app/sw.ts is compiled to public/sw.js at build time; disabled in
+// dev so HMR isn't intercepted by a stale worker.
+const withSerwistInit = require("@serwist/next").default;
+
+module.exports = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+})(nextConfig);

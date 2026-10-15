@@ -1,35 +1,67 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { dict, type Locale, type Dict } from "@/lib/i18n";
+import { NextIntlClientProvider } from "next-intl";
+import { ThemeProvider, useTheme } from "next-themes";
+import { DirectionProvider } from "@radix-ui/react-direction";
 import { Sun, Moon, Languages } from "lucide-react";
 
-const Ctx = createContext<{ locale: Locale; setLocale: (l: Locale) => void; t: Dict; theme: string; setTheme: (t: string) => void }>({
+type AppCtx = {
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+  t: Dict;
+  theme: string;
+  setTheme: (t: string) => void;
+};
+
+const Ctx = createContext<AppCtx>({
   locale: "ar", setLocale: () => {}, t: dict.ar, theme: "light", setTheme: () => {}
 });
 
-export function Providers({ children }: { children: React.ReactNode }) {
-  // Arabic-first: RTL is the default, English secondary.
+/* next-themes owns the .dark class; this wrapper keeps the app's t/locale API */
+function AppProviders({ children }: { children: React.ReactNode }) {
+  const { theme, setTheme } = useTheme();
   const [locale, setLocaleState] = useState<Locale>("ar");
-  const [theme, setThemeState] = useState("light");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   useEffect(() => {
     const l = localStorage.getItem("hudoor_locale");
-    const th = localStorage.getItem("hudoor_theme") || "light";
     setLocaleState(l === "en" ? "en" : "ar");
-    setThemeState(th === "dark" ? "dark" : "light");
   }, []);
   useEffect(() => {
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
     document.documentElement.lang = locale;
-    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("hudoor_locale", locale);
-    localStorage.setItem("hudoor_theme", theme);
-  }, [locale, theme]);
+  }, [locale]);
+
+  const dir = locale === "ar" ? "rtl" : "ltr";
+  const value: AppCtx = {
+    locale,
+    setLocale: setLocaleState,
+    t: dict[locale],
+    // avoid hydration flash: render the default until mounted
+    theme: mounted ? (theme ?? "light") : "light",
+    setTheme: (t: string) => setTheme(t)
+  };
   return (
-    <Ctx.Provider value={{ locale, setLocale: setLocaleState, t: dict[locale], theme, setTheme: setThemeState }}>
-      {children}
+    <Ctx.Provider value={value}>
+      <DirectionProvider dir={dir}>
+        <NextIntlClientProvider locale={locale} messages={dict[locale] as Record<string, string>}>
+          {children}
+        </NextIntlClientProvider>
+      </DirectionProvider>
     </Ctx.Provider>
   );
 }
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+      <AppProviders>{children}</AppProviders>
+    </ThemeProvider>
+  );
+}
+
 export const useApp = () => useContext(Ctx);
 
 export function Controls() {
@@ -38,7 +70,7 @@ export function Controls() {
     <div className="flex items-center gap-2">
       <button
         onClick={() => setLocale(locale === "ar" ? "en" : "ar")}
-        className="flex min-h-[48px] min-w-[48px] items-center justify-center gap-1 rounded-md2 border border-black/15 px-3 text-sm font-semibold dark:border-white/20"
+        className="flex min-h-[48px] min-w-[48px] items-center justify-center gap-1 rounded-base border border-border px-3 text-sm font-semibold transition-colors hover:bg-accent"
         aria-label="language"
       >
         <Languages size={18} strokeWidth={2} />
@@ -46,7 +78,7 @@ export function Controls() {
       </button>
       <button
         onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-        className="grid min-h-[48px] min-w-[48px] place-items-center rounded-md2 border border-black/15 dark:border-white/20"
+        className="grid min-h-[48px] min-w-[48px] place-items-center rounded-base border border-border transition-colors hover:bg-accent"
         aria-label="theme"
       >
         {theme === "dark" ? <Sun size={18} strokeWidth={2} /> : <Moon size={18} strokeWidth={2} />}

@@ -3,11 +3,33 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp } from "@/components/providers";
-import { Button, StatusPill, EmptyState, SkeletonRows } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { getOrCreateDeviceId } from "@/lib/device";
 import { tickSessions } from "@/lib/session-tick";
-import { ScanLine, BookOpen, CalendarDays, ClipboardList, Megaphone, FileText, Smartphone, Flame, ChevronDown, MapPin, Sparkles, GraduationCap, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import {
+  BookOpen,
+  CalendarDays,
+  ClipboardList,
+  Megaphone,
+  FileText,
+  Smartphone,
+  Flame,
+  GraduationCap,
+  Check
+} from "lucide-react";
+import { NextClassCard } from "@/components/hudoor/next-class-card";
+import { NumberStat } from "@/components/hudoor/number-stat";
+import { TimelineRow } from "@/components/hudoor/timeline-row";
+import { CourseAttendanceCard } from "@/components/hudoor/course-attendance-card";
+import { StatusPill } from "@/components/hudoor/status-pill";
+import { EmptyState } from "@/components/hudoor/empty-state";
+import { TimelineSkeleton, CardSkeleton } from "@/components/hudoor/skeletons";
+import { LazyAnimatedList } from "@/components/hudoor/bits";
+import { BottomSheet } from "@/components/hudoor/bottom-sheet";
+import { toast } from "@/components/hudoor/toast";
+import { CommandPalette } from "@/components/hudoor/command-palette";
 
 type Course = { id: string; code: string; name_en: string; name_ar: string };
 type Sess = { id: string; course_id: string; status: string; starts_at: string; ends_at: string; room_id: string | null; courses?: any };
@@ -34,7 +56,6 @@ export default function StudentHome() {
   const [excuses, setExcuses] = useState<any[]>([]);
   const [showExcuse, setShowExcuse] = useState(false);
   const [excForm, setExcForm] = useState({ course_id: "", reason: "" });
-  const [flash, setFlash] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [userId, setUserId] = useState("");
@@ -171,8 +192,12 @@ export default function StudentHome() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ record_id: recordId, reason: reason.trim() })
     });
-    if (r.ok) setDisputed(s => new Set(s).add(recordId));
-    else setFlash("error");
+    if (r.ok) {
+      setDisputed(s => new Set(s).add(recordId));
+      toast.info(t.contest);
+    } else {
+      toast.error("error");
+    }
   }
   async function sendExcuse() {
     if (!excForm.course_id || excForm.reason.trim().length < 5) return;
@@ -185,6 +210,7 @@ export default function StudentHome() {
       setExcForm({ course_id: "", reason: "" });
       const ex = await fetch("/api/console/excuses").then(x => x.json()).catch(() => ({ rows: [] }));
       setExcuses(ex.rows ?? []);
+      toast.success(t.createdOk);
     }
   }
   async function enrollCourse(courseId: string) {
@@ -196,14 +222,13 @@ export default function StudentHome() {
     const j = await r.json().catch(() => ({}));
     setEnrolling(null);
     if (r.ok) {
-      setFlash("✓");
-      setTimeout(() => setFlash(""), 2000);
+      toast.success(t.createdOk);
       fetch("/api/student/courses").then(r => r.json()).then(j2 => setProgramCourses(j2.rows ?? [])).catch(() => {});
       const sb = browserSupabase();
       const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar)").eq("student_id", userId);
       setCourses(((enr ?? []).map((e: any) => e.courses) as Course[]));
     } else {
-      setFlash(j.error ?? "error");
+      toast.error(j.error ?? "error");
     }
   }
 
@@ -212,202 +237,147 @@ export default function StudentHome() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "device_reset", payload: {} })
     });
-    setFlash(r.ok ? `✓ ${t.createdOk}` : "error");
+    if (r.ok) toast.success(t.createdOk);
+    else toast.error("error");
   }
 
-  const ringC = 2 * Math.PI * 26;
-  const ringColor = stats.p >= 75 ? "#2E9B5F" : stats.p >= 50 ? "#D9A21B" : "#B5432E";
+  const liveEndsIn = live ? Math.max(1, Math.ceil((+new Date(live.ends_at) - now) / 60000)) : 0;
 
   return (
-    <main className="mx-auto w-full max-w-md px-5 pb-32 pt-6">
-      {/* header — clean, no icons */}
+    <main className="mx-auto w-full max-w-md px-4 pb-32 pt-6">
+      {/* header — greeting + program badge */}
       <header>
-        <p className="text-sm font-medium text-neutral-400">{greet}{firstName ? `، ${firstName}` : ""}</p>
+        <p className="text-sm font-medium text-muted-foreground">{greet}{firstName ? `، ${firstName}` : ""}</p>
         <div className="mt-1 flex items-center gap-2">
           <h1 className="font-display text-[26px] font-bold leading-tight">{t.scanToAttend}</h1>
           {programName && (
-            <span className="shrink-0 rounded-full bg-register/10 px-2.5 py-1 text-[11px] font-bold text-register">
+            <span className="shrink-0 rounded-pill bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary">
               {programName}
             </span>
           )}
         </div>
       </header>
 
-      {/* LIVE hero — prominent scan card */}
-      {live ? (
-        <Link href="/student/scan-in-app" className="mt-5 block overflow-hidden rounded-xl bg-ink text-white shadow-lg dark:bg-white dark:text-ink" aria-label={t.tapToScan}>
-          <span className="block p-5">
-            <span className="flex items-center gap-2 text-[13px] font-bold">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              </span>
-              {t.liveNow} · {live.courses?.code}
-            </span>
-            <span className="font-display mt-1.5 block text-lg font-bold" dir="auto">{locale === "ar" ? live.courses?.name_ar : live.courses?.name_en}</span>
-            <span className="mt-1 block text-[13px] opacity-70">
-              {t.endsIn} {fmtDur(Math.max(1, Math.ceil((+new Date(live.ends_at) - now) / 60000)), t)}
-              {live.room_id && rooms[live.room_id] ? ` · ${rooms[live.room_id]}` : ""}
-            </span>
-            <span className="mt-4 flex min-h-[56px] items-center justify-center gap-2 rounded-lg bg-emerald-500 text-base font-bold text-white">
-              <ScanLine size={22} strokeWidth={2} /> {t.scanNow}
-            </span>
-          </span>
-        </Link>
-      ) : (
-        <Link href="/student/scan-in-app" className="mt-5 block">
-          <span className="flex min-h-[68px] items-center justify-center gap-3 rounded-xl bg-register text-lg font-bold text-white shadow-md transition-all hover:bg-register-dark hover:shadow-lg active:scale-[0.98]">
-            <ScanLine size={26} strokeWidth={2} /> {t.scanToAttend}
-          </span>
-        </Link>
-      )}
-      {!live && upcoming && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-black/8 px-4 py-2.5 text-[13px] dark:border-white/12">
-          <Sparkles size={16} strokeWidth={2} className="shrink-0 text-register" />
-          <span dir="auto">
-            {t.nextUp}: <b>{upcoming.courses?.code}</b> · {t.startsIn} {fmtDur(Math.max(1, Math.ceil((+new Date(upcoming.starts_at) - now) / 60000)), t)}
-          </span>
-        </div>
-      )}
-      {flash && <p className="mt-2 text-center text-[13px] font-semibold text-register" role="status">{flash}</p>}
+      {/* hero — the one bold moment: live class or the quiet scan CTA */}
+      <NextClassCard
+        live={!!live}
+        courseCode={live?.courses?.code}
+        courseName={live ? (locale === "ar" ? live.courses?.name_ar : live.courses?.name_en) : upcoming ? (locale === "ar" ? upcoming.courses?.name_ar : upcoming.courses?.name_en) : t.scanToAttend}
+        room={live?.room_id ? rooms[live.room_id] : undefined}
+        endsInSeconds={live ? (+new Date(live.ends_at) - now) / 1000 : undefined}
+        nextCode={upcoming?.courses?.code}
+        nextInMinutes={upcoming ? Math.max(1, Math.ceil((+new Date(upcoming.starts_at) - now) / 60000)) : undefined}
+        scanLabel={t.scanNow}
+        endsInLabel={t.endsIn}
+        startsInLabel={t.startsIn}
+        className="mt-5"
+      />
 
-      {/* stats — clean 3-col grid */}
+      {/* stats — 3 quiet numbers */}
       <section className="mt-6 grid grid-cols-3 gap-2.5" aria-label={t.overallRate}>
-        <div className="flex flex-col items-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
-          <svg width="56" height="56" viewBox="0 0 64 64" role="img" aria-label={`${stats.p}%`}>
-            <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7" className="stroke-black/8 dark:stroke-white/12" />
-            <circle cx="32" cy="32" r="26" fill="none" stroke={ringColor} strokeWidth="7" strokeLinecap="round"
-              strokeDasharray={ringC} strokeDashoffset={ringC - (ringC * stats.p) / 100}
-              transform="rotate(-90 32 32)" />
-            <text x="32" y="37" textAnchor="middle" fontSize="15" fontWeight="800" className="fill-ink dark:fill-white">{stats.p}%</text>
-          </svg>
-          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.overallRate}</span>
+        <div className="rounded-card border border-border bg-card">
+          <NumberStat value={stats.p} suffix="%" label={t.overallRate} tone={stats.p >= 75 ? "present" : stats.p >= 50 ? "late" : "absent"} />
         </div>
-        <div className="flex flex-col items-center justify-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
-          <span className="tnum font-display text-[22px] font-bold leading-none">{stats.mine}<span className="text-sm text-neutral-400">/{stats.total}</span></span>
-          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.sessionsPresent}</span>
+        <div className="rounded-card border border-border bg-card">
+          <NumberStat value={stats.mine} label={`${t.sessionsPresent} / ${stats.total}`} />
         </div>
-        <div className="flex flex-col items-center justify-center rounded-xl border border-black/8 py-3.5 dark:border-white/12">
-          <span className="flex items-center gap-1 font-display text-[22px] font-bold leading-none">
-            <Flame size={20} strokeWidth={2} className={stats.streak > 0 ? "text-orange-500" : "text-neutral-300"} />
-            {stats.streak}
-          </span>
-          <span className="mt-1.5 text-[11px] font-semibold text-neutral-400">{t.dayStreak}</span>
+        <div className="rounded-card border border-border bg-card">
+          <NumberStat value={stats.streak} label={t.dayStreak} tone={stats.streak > 0 ? "late" : "default"} icon={<Flame size={14} strokeWidth={2} className="me-1 inline" />} />
         </div>
       </section>
 
-      {/* today's schedule — clean cards */}
+      {/* today's schedule */}
       <section className="mt-7" aria-label={t.todaySchedule}>
         <h2 className="font-display flex items-center gap-2 text-lg font-bold"><CalendarDays size={18} strokeWidth={2} /> {t.todaySchedule}</h2>
-        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
-          {loading && <div className="p-4"><div className="skeleton h-5 w-2/3 rounded bg-black/8 dark:bg-white/12" /><div className="skeleton mt-2 h-5 w-1/2 rounded bg-black/8 dark:bg-white/12" /></div>}
+        <div className="mt-2 divide-y divide-border rounded-card border border-border bg-card">
+          {loading && <div className="p-4"><TimelineSkeleton rows={3} /></div>}
           {!loading && todayList.length === 0 && (
-            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noSessionsToday}</p><p className="text-[13px]">{t.noSessionsHint}</p></div>
+            <div className="p-4 text-muted-foreground"><p className="font-semibold">{t.noSessionsToday}</p><p className="text-[13px]">{t.noSessionsHint}</p></div>
           )}
           {todayList.map(s => {
             const r = recBySession.get(s.id);
             const ended = s.status === "ended" || +new Date(s.ends_at) <= now;
             return (
-              <div key={s.id} className={cn("flex items-center justify-between gap-2 px-4 py-3", s.status === "active" && "bg-emerald-500/[0.06]")}>
-                <div className="flex items-center gap-3">
-                  <div className="tnum flex w-[92px] shrink-0 flex-col text-[13px] font-bold" dir="ltr">
-                    <span>{fmtTime(s.starts_at, locale)}</span>
-                    <span className="font-medium text-neutral-400">{fmtTime(s.ends_at, locale)}</span>
-                  </div>
-                  <div>
-                    <div className="tnum font-display text-[15px] font-semibold">{s.courses?.code}</div>
-                    <div className="flex items-center gap-1 text-xs text-neutral-400">
-                      {s.room_id && rooms[s.room_id] && <span className="flex items-center gap-0.5"><MapPin size={11} />{rooms[s.room_id]}</span>}
-                      <span dir="auto">{locale === "ar" ? s.courses?.name_ar : s.courses?.name_en}</span>
-                    </div>
-                  </div>
-                </div>
-                {r ? <StatusPill status={r.status} /> : ended ? <StatusPill status="absent" /> : <StatusPill status={s.status} />}
-              </div>
+              <TimelineRow
+                key={s.id}
+                startTime={fmtTime(s.starts_at, locale)}
+                endTime={fmtTime(s.ends_at, locale)}
+                courseCode={s.courses?.code}
+                courseName={locale === "ar" ? s.courses?.name_ar : s.courses?.name_en}
+                room={s.room_id ? rooms[s.room_id] : undefined}
+                status={r ? r.status : ended ? "absent" : s.status}
+                live={s.status === "active"}
+              />
             );
           })}
         </div>
       </section>
 
-      {/* courses accordion — clean cards with progress */}
+      {/* my courses — attendance at a glance */}
       <section className="mt-7" aria-label={t.myCourses}>
         <h2 className="font-display flex items-center gap-2 text-lg font-bold"><BookOpen size={18} strokeWidth={2} /> {t.myCourses}</h2>
-        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
-          {loading && <div className="p-4"><div className="skeleton h-5 w-1/2 rounded bg-black/8 dark:bg-white/12" /></div>}
+        <div className="mt-2 divide-y divide-border rounded-card border border-border bg-card">
+          {loading && <div className="p-4"><CardSkeleton rows={1} /></div>}
           {!loading && courses.length === 0 && (
-            <div className="p-4 text-neutral-500"><p className="font-semibold">{t.noEnroll}</p><p className="text-[13px]">{t.noEnrollHint}</p></div>
+            <div className="p-4 text-muted-foreground"><p className="font-semibold">{t.noEnroll}</p><p className="text-[13px]">{t.noEnrollHint}</p></div>
           )}
           {courses.map(c => {
             const s = pct(c.id);
-            const low = s.total > 0 && s.p < 75;
-            const open = expanded === c.id;
             return (
-              <div key={c.id}>
-                <button onClick={() => setExpanded(open ? null : c.id)} aria-expanded={open}
-                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-start transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
-                  <span className="min-w-0">
-                    <span className="block truncate text-[15px] font-semibold">{locale === "ar" ? c.name_ar : c.name_en} <span className="tnum text-[13px] font-medium text-neutral-400">{c.code}</span></span>
-                    <span className="mt-1.5 block h-1.5 w-32 overflow-hidden rounded-full bg-black/8 dark:bg-white/12" role="progressbar" aria-valuenow={s.p} aria-valuemin={0} aria-valuemax={100}>
-                      <span className={cn("block h-full rounded-full transition-all", low ? "bg-hi" : "bg-stamp")} style={{ width: `${s.p}%` }} />
-                    </span>
-                    <span className="tnum mt-1 block text-[11px] text-neutral-400">
-                      {s.mine}/{s.total} {t.sessionsCount}
-                      {low && <span className="font-semibold text-hi-dark dark:text-amber-300"> · {t.below75}</span>}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className={cn("tnum font-display text-base font-bold", s.total === 0 ? "text-neutral-400" : low ? "text-hi-dark dark:text-amber-300" : "text-stamp-dark dark:text-emerald-300")}>
-                      {s.total === 0 ? "—" : `${s.p}%`}
-                    </span>
-                    <ChevronDown size={16} className={cn("text-neutral-400 transition-transform", open && "rotate-180")} />
-                  </span>
-                </button>
-                {open && (
-                  <div className="border-t border-black/8 bg-black/[0.02] px-4 py-2 dark:border-white/12 dark:bg-white/[0.03]">
-                    {s.list.length === 0 && <p className="py-2 text-[13px] text-neutral-500">{t.noSessionsYet}</p>}
-                    {[...s.list].sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at)).map(sess => {
-                      const r = recBySession.get(sess.id);
-                      const ended = sess.status === "ended" || +new Date(sess.ends_at) <= now;
-                      return (
-                        <div key={sess.id} className="flex items-center justify-between gap-2 border-b border-black/5 py-2 text-[13px] last:border-0 dark:border-white/5">
-                          <span className="tnum text-neutral-600 dark:text-neutral-300">
-                            {new Date(sess.starts_at).toLocaleDateString(locale === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "numeric" })}
-                            {" · "}{fmtTime(sess.starts_at, locale)}
-                          </span>
-                          {r ? <StatusPill status={r.status} /> : ended ? <StatusPill status="absent" /> : <StatusPill status={sess.status} />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <CourseAttendanceCard
+                key={c.id}
+                courseCode={c.code}
+                courseName={locale === "ar" ? c.name_ar : c.name_en}
+                attended={s.mine}
+                total={s.total}
+                percent={s.p}
+                noSessionsLabel={t.noSessionsYet}
+                expanded={expanded === c.id}
+                onToggle={() => setExpanded(expanded === c.id ? null : c.id)}
+                sessions={s.list
+                  .slice()
+                  .sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at))
+                  .map(sess => {
+                    const r = recBySession.get(sess.id);
+                    const ended = sess.status === "ended" || +new Date(sess.ends_at) <= now;
+                    return {
+                      id: sess.id,
+                      dateLabel: new Date(sess.starts_at).toLocaleDateString(locale === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "numeric" }),
+                      timeLabel: fmtTime(sess.starts_at, locale),
+                      status: r ? r.status : ended ? "absent" : sess.status,
+                      statusLabel: undefined
+                    };
+                  })}
+              />
             );
           })}
         </div>
       </section>
 
-      {/* program courses — enroll in any course from your program */}
+      {/* program courses — enroll from your program */}
       {programCourses.length > 0 && (
         <section className="mt-7" aria-label={t.myProgramCourses}>
           <h2 className="font-display flex items-center gap-2 text-lg font-bold"><GraduationCap size={18} strokeWidth={2} /> {t.myProgramCourses}</h2>
-          <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
+          <div className="mt-2 divide-y divide-border rounded-card border border-border bg-card">
             {programCourses.map(c => (
               <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-[15px] font-semibold" dir="auto">
                     {locale === "ar" ? c.name_ar : c.name_en}
-                    <span className="tnum ms-2 text-[13px] font-medium text-neutral-400">{c.code}</span>
+                    <span className="tnum ms-2 text-[13px] font-medium text-muted-foreground">{c.code}</span>
                   </p>
                   {c.credit_hours != null && (
-                    <p className="tnum text-[11px] text-neutral-400">{c.credit_hours} {t.creditHours}</p>
+                    <p className="tnum text-[11px] text-muted-foreground">{c.credit_hours} {t.creditHours}</p>
                   )}
                 </div>
                 {c.enrolled ? (
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">✓</span>
+                  <span className="shrink-0" aria-label={t.present}>
+                    <StatusPill status="present" label="" className="px-1.5" />
+                  </span>
                 ) : (
                   <Button
                     variant="outline"
-                    className="!min-h-[36px] shrink-0 !px-3 !text-[13px]"
+                    size="sm"
                     disabled={enrolling === c.id}
                     onClick={() => enrollCourse(c.id)}
                   >
@@ -420,91 +390,116 @@ export default function StudentHome() {
         </section>
       )}
 
-      {/* announcements — clean cards */}
+      {/* announcements — animated feed */}
       {notes.length > 0 && (
         <section className="mt-7" aria-label={t.announcementsFeed}>
           <h2 className="font-display flex items-center gap-2 text-lg font-bold"><Megaphone size={18} strokeWidth={2} /> {t.announcementsFeed}</h2>
-          <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
-            {notes.map((a: any) => {
-              const isNew = Date.now() - +new Date(a.created_at) < 3 * 864e5;
-              return (
-                <div key={a.id} className="px-4 py-3">
-                  <p className="flex items-center gap-2 text-[15px] font-bold" dir="auto">
-                    {isNew && <span className="h-2 w-2 shrink-0 rounded-full bg-register" aria-label="new" />}
-                    {locale === "ar" ? a.title_ar : a.title_en ?? a.title_ar}
-                  </p>
-                  <p className="mt-0.5 text-[13px] text-neutral-600 dark:text-neutral-300" dir="auto">{locale === "ar" ? a.body_ar : a.body_en ?? a.body_ar}</p>
-                </div>
-              );
-            })}
+          <div className="mt-2 overflow-hidden rounded-card border border-border bg-card">
+            <LazyAnimatedList
+              items={notes}
+              maxHeight={320}
+              renderItem={(a: any) => {
+                const isNew = Date.now() - +new Date(a.created_at) < 3 * 864e5;
+                return (
+                  <span className="block" dir="auto">
+                    <span className="flex items-center gap-2 text-[15px] font-bold">
+                      {isNew && <span className="h-2 w-2 shrink-0 rounded-pill bg-primary" aria-label="new" />}
+                      {locale === "ar" ? a.title_ar : a.title_en ?? a.title_ar}
+                    </span>
+                    <span className="mt-0.5 block text-[13px] text-muted-foreground">{locale === "ar" ? a.body_ar : a.body_en ?? a.body_ar}</span>
+                  </span>
+                );
+              }}
+            />
           </div>
         </section>
       )}
 
-      {/* history — clean table */}
+      {/* recent scans */}
       <section className="mt-7" aria-label={t.recentScans}>
         <h2 className="font-display flex items-center gap-2 text-lg font-bold"><ClipboardList size={18} strokeWidth={2} /> {t.recentScans}</h2>
-        <div className="mt-2 overflow-hidden rounded-xl border border-black/8 dark:border-white/12">
+        <div className="mt-2 overflow-hidden rounded-card border border-border bg-card">
           {loading ? (
-            <table className="w-full"><tbody><SkeletonRows rows={4} cols={2} /></tbody></table>
+            <div className="p-4"><TimelineSkeleton rows={4} /></div>
           ) : records.length === 0 ? (
-            <EmptyState icon={<ClipboardList size={24} strokeWidth={1.75} />} title={t.nothingYet} hint={t.nothingYetHint} />
+            <EmptyState
+              icon={<ClipboardList size={24} strokeWidth={1.75} />}
+              title={t.nothingYet}
+              hint={t.nothingYetHint}
+              className="border-0"
+            />
           ) : (
-            <table className="w-full border-collapse text-start text-[14px]">
-              <tbody>
-                {records.slice(0, 8).map(r => (
-                  <tr key={r.id} className="border-b border-black/8 last:border-0 dark:border-white/12">
-                    <td className="px-4 py-2.5">
-                      <span className="tnum font-semibold">{courseById.get(r.attendance_sessions?.course_id)?.code ?? ""}</span>
-                      <span className="tnum block text-[11px] text-neutral-400">{new Date(r.scanned_at).toLocaleString(locale === "ar" ? "ar-EG" : "en-US")}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-end">
-                      <StatusPill status={r.status} />
-                      {(r.status === "absent" || r.status === "late") && !disputed.has(r.id) && (
-                        <button onClick={() => contest(r.id)} className="ms-2 min-h-[36px] rounded text-[13px] font-semibold text-register hover:underline">{t.contest}</button>
-                      )}
-                      {disputed.has(r.id) && <span className="ms-2 text-[11px] text-neutral-400">…</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="divide-y divide-border">
+              {records.slice(0, 8).map(r => (
+                <div key={r.id} className="flex items-center justify-between gap-2 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="tnum text-[15px] font-semibold">
+                      {courseById.get(r.attendance_sessions?.course_id)?.code ?? ""}
+                    </p>
+                    <p className="tnum text-[11px] text-muted-foreground">
+                      {new Date(r.scanned_at).toLocaleString(locale === "ar" ? "ar-EG" : "en-US")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusPill status={r.status} />
+                    {(r.status === "absent" || r.status === "late") && !disputed.has(r.id) && (
+                      <button onClick={() => contest(r.id)} className="min-h-[36px] rounded text-[13px] font-semibold text-primary hover:underline">{t.contest}</button>
+                    )}
+                    {disputed.has(r.id) && <span className="text-[11px] text-muted-foreground" aria-label={t.contest}><Check size={14} /></span>}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
         <a href="/api/reports/export" className="mt-3 block"><Button variant="outline" className="w-full">{t.exportCsv}</Button></a>
       </section>
 
-      {/* excuses — clean cards */}
+      {/* excuses */}
       <section className="mt-7" aria-label={t.myExcuses}>
         <div className="flex items-center justify-between">
           <h2 className="font-display flex items-center gap-2 text-lg font-bold"><FileText size={18} strokeWidth={2} /> {t.myExcuses}</h2>
-          <Button variant="outline" className="!min-h-[40px] !text-[13px]" onClick={() => setShowExcuse(s => !s)}>{t.newExcuse}</Button>
+          <BottomSheet
+            title={t.newExcuse}
+            description={t.contestHint}
+            trigger={<Button variant="outline" size="sm">{t.newExcuse}</Button>}
+            footer={<Button className="w-full" onClick={sendExcuse} disabled={!excForm.course_id || excForm.reason.trim().length < 5}>{t.save}</Button>}
+          >
+            <div className="grid gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="exc-course">{t.course}</Label>
+                <select
+                  id="exc-course"
+                  value={excForm.course_id}
+                  onChange={e => setExcForm({ ...excForm, course_id: e.target.value })}
+                  className="flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">— {t.course}</option>
+                  {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="exc-reason">{t.comment}</Label>
+                <Textarea id="exc-reason" value={excForm.reason} onChange={e => setExcForm({ ...excForm, reason: e.target.value })} rows={3} dir="auto" placeholder={t.contestHint} />
+              </div>
+            </div>
+          </BottomSheet>
         </div>
-        {showExcuse && (
-          <div className="mt-2 grid gap-2 rounded-xl border border-black/8 p-3 dark:border-white/12">
-            <select value={excForm.course_id} onChange={e => setExcForm({ ...excForm, course_id: e.target.value })}
-              className="min-h-[44px] w-full rounded-lg border-2 border-black/12 bg-paper px-3 text-[14px] outline-none focus:border-register dark:border-white/18 dark:bg-white/5">
-              <option value="">— {t.course}</option>
-              {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
-            </select>
-            <textarea value={excForm.reason} onChange={e => setExcForm({ ...excForm, reason: e.target.value })} rows={3} dir="auto" placeholder={t.contestHint}
-              className="min-h-[64px] w-full rounded-lg border-2 border-black/12 bg-paper px-3 py-2 text-[14px] outline-none focus:border-register dark:border-white/18 dark:bg-white/5" />
-            <Button onClick={sendExcuse}>{t.save}</Button>
-          </div>
-        )}
-        <div className="mt-2 divide-y divide-black/8 rounded-xl border border-black/8 dark:divide-white/12 dark:border-white/12">
+        <div className="mt-2 divide-y divide-border rounded-card border border-border bg-card">
           {excuses.slice(0, 5).map((e: any) => (
             <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-[13px]">
               <span className="truncate font-medium" dir="auto">{e.reason.slice(0, 60)}</span>
-              <StatusPill status={e.status === "pending" ? "late" : e.status === "approved" ? "present" : "absent"} />
+              <StatusPill status={e.status === "pending" ? "scheduled" : e.status === "approved" ? "present" : "absent"} />
             </div>
           ))}
-          {excuses.length === 0 && <p className="p-4 text-[13px] text-neutral-400">—</p>}
+          {excuses.length === 0 && <p className="p-4 text-[13px] text-muted-foreground">—</p>}
         </div>
-        <button onClick={requestDeviceReset} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-black/12 text-[13px] font-semibold transition-colors hover:bg-black/[0.02] dark:border-white/18 dark:hover:bg-white/[0.03]">
+        <button onClick={requestDeviceReset} className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-base border border-border text-[13px] font-semibold transition-colors hover:bg-muted">
           <Smartphone size={16} strokeWidth={2} /> {t.requestDeviceReset}
         </button>
       </section>
+
+      <CommandPalette />
     </main>
   );
 }
