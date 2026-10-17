@@ -81,13 +81,15 @@ function LoginInner() {
     router.push(p?.role === "admin" ? "/admin" : p?.role === "professor" ? "/professor" : "/student");
   }
 
+  const appOrigin = (process.env.NEXT_PUBLIC_APP_URL || location.origin).replace(/\/$/, "");
+
   async function google() {
     setErr(""); setDomainErr(""); setGoogleBusy(true);
     try {
       const sb = browserSupabase();
       await sb.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` }
+        options: { redirectTo: `${appOrigin}/auth/callback?next=${encodeURIComponent(next)}` }
       });
     } catch (e: any) {
       setErr(e.message ?? "Google sign-in failed");

@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/hudoor/empty-state";
 import { CardSkeleton } from "@/components/hudoor/skeletons";
 import {
   WifiOff, RefreshCw, ScanLine, ClipboardList,
-  MapPin, Smartphone, Clock, UserX, AlertTriangle, ExternalLink as LinkIcon
+  MapPin, Smartphone, Clock, UserX, AlertTriangle, Shield, ExternalLink as LinkIcon
 } from "lucide-react";
 
 type Result = { status: string; code: string; message: string; course?: any; time?: string } | null;
@@ -18,6 +18,12 @@ type Result = { status: string; code: string; message: string; course?: any; tim
 function isInAppBrowser(): boolean {
   const ua = navigator.userAgent;
   return /whatsapp|instagram|fbav|fb_iab|line|wechat|telegram/i.test(ua);
+}
+function isIOS(): boolean {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function isSecureContext(): boolean {
+  return !!window.isSecureContext || location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
 
 function codeCopy(t: any, code: string): { title: string; fix: string; icon: React.ReactNode } {
@@ -126,6 +132,21 @@ function ScanInner() {
           hint={t.err_in_app_fix}
           withGrid
           action={<Button onClick={() => location.reload()}><LinkIcon size={18} strokeWidth={2} /> {t.openInBrowser}</Button>}
+        />
+      </main>
+    );
+  }
+
+  // iPhone requires HTTPS for camera access (localhost is exempt for dev)
+  if (isIOS() && !isSecureContext()) {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<Shield size={28} strokeWidth={2} />}
+          title={t.err_iphone_https}
+          hint={t.err_iphone_https_fix}
+          withGrid
+          action={<Button onClick={() => location.reload()}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
       </main>
     );

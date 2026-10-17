@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CardSkeleton } from "@/components/hudoor/skeletons";
 import { toast } from "@/components/hudoor/toast";
-import { User, Mail, Shield, Calendar, BookOpen, GraduationCap, MapPin, Phone, Hash, Fingerprint, Globe, Lock, RefreshCw } from "lucide-react";
+import { User, Mail, Shield, Calendar, BookOpen, GraduationCap, MapPin, Phone, Hash, Fingerprint, Globe, RefreshCw } from "lucide-react";
 
 export default function ProfilePage() {
   const { t, locale } = useApp();
@@ -176,7 +176,7 @@ export default function ProfilePage() {
         {/* Linked authentication methods */}
         <div className="mt-8 rounded-card border border-border bg-card p-6">
           <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-            <Lock size={18} strokeWidth={2} /> {t.authMethods || "طرق تسجيل الدخول المرتبطة"}
+            <Shield size={18} strokeWidth={2} /> {t.authMethods || "طرق تسجيل الدخول المرتبطة"}
           </h2>
           <div className="divide-y divide-border">
             {authMethods.length === 0 ? (

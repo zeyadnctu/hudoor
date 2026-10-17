@@ -22,8 +22,8 @@ export default function InAppScan() {
       <main className="mx-auto w-full max-w-md px-4 py-10">
         <EmptyState
           icon={<CameraOff size={28} />}
-          title={t.err_camera}
-          hint={t.err_camera_fix}
+          title={t.err_camera_denied}
+          hint={t.err_camera_denied_fix}
           withGrid
           action={<Button onClick={() => location.reload()}>{t.retry}</Button>}
         />
