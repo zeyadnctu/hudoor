@@ -69,9 +69,21 @@ export default function ProfSessionsPage() {
     load();
   }
 
+  function errMsg(code: string): string {
+    const m: Record<string, string> = {
+      blocked_day: t.blockedDay,
+      not_your_course: t.err_not_your_course || "هذه المادة ليست من موادك.",
+      forbidden: t.err_forbidden || "غير مسموح لك بهذه العملية.",
+      unauth: t.err_login || "سجل الدخول أولاً.",
+      invalid: t.err_invalid_input || "مدخلات غير صحيحة.",
+      bad_time: t.err_bad_time || "التاريخ أو الوقت غير صحيح.",
+    };
+    return m[code] || code;
+  }
+
   async function submit() {
     setMsg("");
-    if (!form.course_id) { setMsg(t.course); return; }
+    if (!form.course_id) { setMsg(t.err_no_course); return; }
     let geo: any = {};
     try {
       const p: any = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 }));
@@ -95,7 +107,7 @@ export default function ProfSessionsPage() {
     }
     const r = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const j = await r.json();
-    if (!r.ok) { setMsg(j.error); return; }
+    if (!r.ok) { setMsg(errMsg(j.error ?? "error")); return; }
     if (j.series) { setMsg(`✓ ${j.series}`); load(); setShow(false); }
     else location.href = `/professor/session/${j.id}`;
   }
