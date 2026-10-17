@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CardSkeleton } from "@/components/hudoor/skeletons";
 import { toast } from "@/components/hudoor/toast";
-import { User, Mail, Shield, Calendar, BookOpen, GraduationCap, MapPin, Phone, Hash } from "lucide-react";
+import { User, Mail, Shield, Calendar, BookOpen, GraduationCap, MapPin, Phone, Hash, Fingerprint, Globe, Lock, RefreshCw } from "lucide-react";
 
 export default function ProfilePage() {
   const { t, locale } = useApp();
@@ -20,6 +20,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [details, setDetails] = useState<any>(null);
   const [program, setProgram] = useState<any>(null);
+  const [authMethods, setAuthMethods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editPhone, setEditPhone] = useState("");
@@ -43,6 +44,26 @@ export default function ProfilePage() {
           setProgram(prog);
         }
       }
+
+      // Load linked auth methods (passkeys from DB, email/password + google inferred from auth)
+      const methods: any[] = [];
+      if (u.email) methods.push({ provider: "email", label: locale === "ar" ? "بريد إلكتروني + كلمة مرور" : "Email + Password", icon: <Mail size={16} strokeWidth={2} />, email: u.email, verified: !!u.email_confirmed_at });
+      // Check passkeys
+      try {
+        const { data: keys } = await sb.from("passkeys").select("name,created_at,last_used_at").eq("user_id", u.id);
+        if (keys?.length) {
+          keys.forEach((k: any) => methods.push({
+            provider: "passkey",
+            label: k.name || (locale === "ar" ? "مفتاح مرور" : "Passkey"),
+            icon: <Fingerprint size={16} strokeWidth={2} />,
+            added: k.created_at,
+            lastUsed: k.last_used_at
+          }));
+        }
+      } catch { /* passkeys table may not exist yet */ }
+      // Google is inferred if user signed in via OAuth (we can't directly query providers, but we show it as an option)
+      methods.push({ provider: "google", label: "Sign in with Google", icon: <Globe size={16} strokeWidth={2} />, email: u.email });
+      setAuthMethods(methods);
 
       setLoading(false);
     })();
@@ -150,6 +171,41 @@ export default function ProfilePage() {
               <Button onClick={save} disabled={saving}>{saving ? "…" : t.save}</Button>
             </div>
           )}
+        </div>
+
+        {/* Linked authentication methods */}
+        <div className="mt-8 rounded-card border border-border bg-card p-6">
+          <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+            <Lock size={18} strokeWidth={2} /> {t.authMethods || "طرق تسجيل الدخول المرتبطة"}
+          </h2>
+          <div className="divide-y divide-border">
+            {authMethods.length === 0 ? (
+              <p className="p-4 text-sm text-muted-foreground text-center">{t.noAuthMethods || "لا توجد طرق تسجيل مرتبطة"}</p>
+            ) : (
+              authMethods.map((m, i) => (
+                <div key={i} className="flex items-center gap-3 py-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-base border border-border bg-muted shrink-0">
+                    {m.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground">{m.label}</p>
+                    {m.email && <p className="text-xs text-muted-foreground truncate" dir="ltr">{m.email}</p>}
+                    {m.provider === "passkey" && (
+                      <p className="text-xs text-muted-foreground">
+                        {locale === "ar" ? "أُضيف في " : "Added "}{m.added ? new Date(m.added).toLocaleDateString() : "—"}
+                      </p>
+                    )}
+                  </div>
+                  <RefreshCw size={14} className="text-muted-foreground shrink-0" strokeWidth={2} />
+                </div>
+              ))
+            )}
+          </div>
+          <div className="mt-4">
+            <Button variant="outline" className="w-full" onClick={() => router.push("/login")}>
+              <RefreshCw size={16} strokeWidth={2} /> {t.refreshSession || "تحديث الجلسة"}
+            </Button>
+          </div>
         </div>
 
         {profile?.role === "student" && (

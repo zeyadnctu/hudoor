@@ -87,7 +87,7 @@ function LoginInner() {
       const sb = browserSupabase();
       await sb.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${location.origin}/login?next=${encodeURIComponent(next)}` }
+        options: { redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` }
       });
     } catch (e: any) {
       setErr(e.message ?? "Google sign-in failed");
