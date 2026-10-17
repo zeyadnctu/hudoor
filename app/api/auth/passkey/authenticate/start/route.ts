@@ -1,5 +1,4 @@
 // @ts-nocheck
-"use server";
 import { NextRequest, NextResponse } from "next/server";
 import { serviceSupabase } from "@/lib/supabase-server";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
