@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp, Controls } from "@/components/providers";
@@ -9,7 +9,11 @@ import { Label } from "@/components/ui/label";
 import { ScanLine, Fingerprint } from "lucide-react";
 
 export default function Login() {
-  return <LoginInner />;
+  return (
+    <Suspense fallback={<div className="dot-grid mx-auto min-h-screen w-full max-w-md px-5 py-8" />}>
+      <LoginInner />
+    </Suspense>
+  );
 }
 
 function LoginInner() {
