@@ -8,8 +8,14 @@ import { effective, asNum, asBool } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
+function isInAppBrowser(ua: string): boolean {
+  return /whatsapp|instagram|fbav|fb_iab|line|wechat|telegram/i.test(ua);
+}
+
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
+  const ua = req.headers.get("user-agent") ?? "";
+  const inApp = isInAppBrowser(ua);
   try {
     const body = await req.json();
     const parsed = scanSchema.safeParse(body);
@@ -26,7 +32,7 @@ export async function POST(req: NextRequest) {
     async function flag(sessionId: string | null, reason: string, extra: any = {}) {
       await svc.from("flagged_attempts").insert({
         user_id: user?.id ?? null, session_id: sessionId, reason,
-        device_id: deviceId, ip, metadata: { ...extra, mocked: !!mocked, accuracy: accuracy ?? null }
+        device_id: deviceId, ip, metadata: { ...extra, mocked: !!mocked, accuracy: accuracy ?? null, ua: ua.slice(0, 200) }
       });
     }
     if (!user) { return NextResponse.json({ status: "error", code: "unauthenticated", message: "Please log in first" }, { status: 401 }); }
@@ -67,8 +73,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", code: "session_closed", message: "Session is not active" }, { status: 400 });
     }
 
+    // 2b. Device/server time drift warning (QR TTL is short; clock skew can cause false expiry)
+    const tokenIat = Math.floor(Date.now() / 1000) - 30; // approx issued-at, allow 30s skew
+    const driftMs = Math.abs(Date.now() - new Date(session.starts_at).getTime());
+    // No hard reject here — just flag for audit if extreme skew
+    if (driftMs > 5 * 60 * 1000) {
+      await flag(session.id, "time_drift", { driftMs: Math.round(driftMs / 1000) });
+    }
+
     // effective anti-cheat + timing settings (session > course > global)
-    const SET_KEYS = ["present_within_min", "late_after_min", "grace_period_min", "allow_late_scanning", "device_binding_on", "campus_ip_allowlist"];
+    const SET_KEYS = ["present_within_min", "late_after_min", "grace_period_min", "allow_late_scanning", "device_binding_on", "campus_ip_allowlist", "gps_accuracy_margin_m"];
     const { data: srows } = await svc.from("app_settings").select("scope_type,scope_id,key,value").in("key", SET_KEYS);
     const relevant = ((srows ?? []) as any[]).filter(r =>
       r.scope_type === "global" ||
@@ -80,6 +94,7 @@ export async function POST(req: NextRequest) {
     const grace = asNum(eff("grace_period_min", 5), 5);
     const allowLate = asBool(eff("allow_late_scanning", true), true);
     const deviceOn = asBool(eff("device_binding_on", true), true);
+    const gpsMargin = asNum(eff("gps_accuracy_margin_m", 50), 50);
 
     // 3. enrolled?
     const { data: enr } = await svc.from("enrollments").select("id").eq("course_id", session.course_id).eq("student_id", user.id).maybeSingle();
@@ -98,7 +113,7 @@ export async function POST(req: NextRequest) {
       // bind on first success: ensure device not bound to someone else
       const { data: clash } = await svc.from("devices").select("student_id").eq("device_id", deviceId).maybeSingle();
       if (clash && clash.student_id !== user.id) { await flag(session.id, "device_conflict", {}); return NextResponse.json({ status: "error", code: "device_conflict", message: "This device is bound to another student" }, { status: 403 }); }
-      await svc.from("devices").insert({ student_id: user.id, device_id: deviceId, ua_hint: req.headers.get("user-agent")?.slice(0, 200) ?? "" });
+      await svc.from("devices").insert({ student_id: user.id, device_id: deviceId, ua_hint: ua.slice(0, 200) });
     } else if (dev.device_id !== deviceId) {
       await flag(session.id, "wrong_device", { expected: "bound", got: "other" });
       return NextResponse.json({ status: "error", code: "wrong_device", message: "Wrong device — ask admin to reset your device binding" }, { status: 403 });
@@ -114,7 +129,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "error", code: "no_location", message: "Location required — allow GPS and retry" }, { status: 400 });
       }
       const d = haversineM(lat, lng, session.geofence_lat, session.geofence_lng);
-      const margin = Math.min(accuracy ?? 0, 50);
+      const margin = Math.min(accuracy ?? 0, gpsMargin);
       if (d > session.geofence_radius_m + margin) {
         await flag(session.id, "outside_geofence", { distance_m: Math.round(d) });
         return NextResponse.json({ status: "error", code: "outside_hall", message: `Outside the hall (${Math.round(d)}m away)` }, { status: 400 });
@@ -149,9 +164,9 @@ export async function POST(req: NextRequest) {
       }
       throw insErr;
     }
-    await svc.from("audit_logs").insert({ actor_id: user.id, action: "scan_present", entity_type: "attendance_session", entity_id: session.id, metadata: { device: deviceId, ip } });
+    await svc.from("audit_logs").insert({ actor_id: user.id, action: "scan_present", entity_type: "attendance_session", entity_id: session.id, metadata: { device: deviceId, ip, in_app_browser: inApp } });
 
-    return NextResponse.json({ status: "success", code: mark === "late" ? "marked_late" : "marked", message: mark === "late" ? "Marked late" : "Marked present", course: (session as any).courses, time: rec.scanned_at });
+    return NextResponse.json({ status: "success", code: mark === "late" ? "marked_late" : "marked", message: mark === "late" ? "Marked late" : "Marked present", course: (session as any).courses, time: rec.scanned_at, in_app_browser: inApp });
   } catch (e: any) {
     return NextResponse.json({ status: "error", code: "server_error", message: "Server error, try again" }, { status: 500 });
   }

@@ -44,8 +44,13 @@ export async function middleware(req: NextRequest) {
       const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
     }
     const p = profile as any;
+    // New accounts (incl. Google sign-up) land with status "pending"; they must
+    // still reach /onboarding to complete student_details. Approval gate applies
+    // once they try to enter /student or other role routes.
     if (p.status !== "approved" || p.is_active === false) {
-      const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+      if (!guard("/onboarding")) {
+        const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
+      }
     }
     const role: string = p.role;
     const custom: string | null = p.custom_role ?? null;

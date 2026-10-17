@@ -10,10 +10,15 @@ import { EmptyState } from "@/components/hudoor/empty-state";
 import { CardSkeleton } from "@/components/hudoor/skeletons";
 import {
   WifiOff, RefreshCw, ScanLine, ClipboardList,
-  MapPin, Smartphone, Clock, UserX, AlertTriangle
+  MapPin, Smartphone, Clock, UserX, AlertTriangle, ExternalLink as LinkIcon
 } from "lucide-react";
 
 type Result = { status: string; code: string; message: string; course?: any; time?: string } | null;
+
+function isInAppBrowser(): boolean {
+  const ua = navigator.userAgent;
+  return /whatsapp|instagram|fbav|fb_iab|line|wechat|telegram/i.test(ua);
+}
 
 function codeCopy(t: any, code: string): { title: string; fix: string; icon: React.ReactNode } {
   switch (code) {
@@ -22,9 +27,9 @@ function codeCopy(t: any, code: string): { title: string; fix: string; icon: Rea
     case "not_enrolled":
       return { title: t.err_enrolled, fix: t.err_enrolled_fix, icon: <UserX size={28} strokeWidth={2} /> };
     case "wrong_device":
-      return { title: t.err_device, fix: t.err_device_fix, icon: <Smartphone size={28} strokeWidth={2} /> };
+      return { title: t.err_device, fix: t.err_device_changed, icon: <Smartphone size={28} strokeWidth={2} /> };
     case "device_conflict":
-      return { title: t.err_device_conflict, fix: t.err_device_fix, icon: <Smartphone size={28} strokeWidth={2} /> };
+      return { title: t.err_device_conflict, fix: t.err_device_changed, icon: <Smartphone size={28} strokeWidth={2} /> };
     case "outside_hall":
       return { title: t.err_hall, fix: t.err_hall_fix, icon: <MapPin size={28} strokeWidth={2} /> };
     case "no_location":
@@ -47,6 +52,8 @@ function codeCopy(t: any, code: string): { title: string; fix: string; icon: Rea
       return { title: t.err_login, fix: t.err_login_fix, icon: <UserX size={28} strokeWidth={2} /> };
     case "rate_limited":
       return { title: t.err_rate, fix: t.err_rate_fix, icon: <AlertTriangle size={28} strokeWidth={2} /> };
+    case "in_app_browser":
+      return { title: t.err_in_app, fix: t.err_in_app_fix, icon: <LinkIcon size={28} strokeWidth={2} /> };
     default:
       return { title: code, fix: "", icon: <AlertTriangle size={28} strokeWidth={2} /> };
   }
@@ -65,6 +72,8 @@ function ScanInner() {
     window.addEventListener("online", on); window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
+
+  const inApp = isInAppBrowser();
 
   useEffect(() => {
     if (!token || !navigator.onLine) return;
@@ -103,6 +112,20 @@ function ScanInner() {
           hint={t.err_offline_fix}
           withGrid
           action={<Button onClick={() => location.reload()}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
+        />
+      </main>
+    );
+  }
+
+  if (inApp) {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<LinkIcon size={28} />}
+          title={t.err_in_app}
+          hint={t.err_in_app_fix}
+          withGrid
+          action={<Button onClick={() => location.reload()}><LinkIcon size={18} strokeWidth={2} /> {t.openInBrowser}</Button>}
         />
       </main>
     );
