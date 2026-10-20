@@ -31,9 +31,15 @@ const GROUPS: { title: string; specs: SettingSpec[] }[] = [
     ]
   },
   {
+    title: "Auth & login",
+    specs: [
+      { key: "auth_restrict_domain", label: "Restrict to university email", type: "boolean", hint: "applies to password + Google sign-in" },
+      { key: "auth_email_domains", label: "Allowed email domains", type: "text", hint: "comma separated, empty = all" }
+    ]
+  },
+  {
     title: "Access & data",
     specs: [
-      { key: "allowed_email_domains", label: "Allowed email domains", type: "text", hint: "comma separated, empty = all" },
       { key: "self_signup_on", label: "Self signup", type: "boolean" },
       { key: "approval_required", label: "Approval required", type: "boolean" },
       { key: "session_timeout_min", label: "Session timeout (min)", type: "number", min: 5, max: 1440 },

@@ -1,11 +1,11 @@
-// Scoped settings with inheritance: session > course > department > faculty > global.
+// Scoped settings with inheritance: session > course > program > department > faculty > global.
 // Dependency-free (values are JSON), so it is unit-testable.
 
-export type ScopeType = "global" | "faculty" | "department" | "course" | "session";
+export type ScopeType = "global" | "faculty" | "department" | "program" | "course" | "session";
 export type SettingRow = { scope_type: ScopeType; scope_id: string | null; key: string; value: unknown };
 
 const SCOPE_RANK: Record<ScopeType, number> = {
-  global: 0, faculty: 1, department: 2, course: 3, session: 4
+  global: 0, faculty: 1, department: 2, program: 3, course: 4, session: 5
 };
 
 /** Narrowest scope wins. */

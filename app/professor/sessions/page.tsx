@@ -29,6 +29,26 @@ export default function ProfSessionsPage() {
   });
 
   useEffect(() => { tickSessions(); }, []);
+
+  // Professor scan defaults (professor/settings) pre-fill every new session.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("hudoor_prof_defaults");
+      if (!raw) return;
+      const d = JSON.parse(raw) as any;
+      setForm(f => ({
+        ...f,
+        duration_min: Number(d.duration_min) || f.duration_min,
+        geofence_radius_m: Number(d.geofence_radius_m ?? d.radius) || f.geofence_radius_m,
+        geofence_enabled: typeof d.geofence_enabled === "boolean" ? d.geofence_enabled
+          : typeof d.geofence === "boolean" ? d.geofence : f.geofence_enabled,
+        late_after_min: d.late_after_min != null && d.late_after_min !== "" ? String(d.late_after_min) : f.late_after_min,
+        qr_interval_sec: d.qr_interval_sec != null && d.qr_interval_sec !== "" ? String(d.qr_interval_sec)
+          : d.qr_seconds != null ? String(d.qr_seconds) : f.qr_interval_sec
+      }));
+    } catch { /* defaults optional */ }
+  }, []);
+
   async function load() {
     const sb = browserSupabase();
     const { data: { user } } = await sb.auth.getUser();

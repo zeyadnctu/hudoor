@@ -10,7 +10,7 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   const id = params.id;
   const { t } = useApp();
   const [url, setUrl] = useState("");
-  const [ttl, setTtl] = useState(10);
+  const [refreshIn, setRefreshIn] = useState(10);
   const [countdown, setCountdown] = useState(10);
   const [present, setPresent] = useState<any[]>([]);
   const [course, setCourse] = useState<any>(null);
@@ -41,16 +41,27 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   async function fetchToken() {
     const r = await fetch(`/api/sessions/${id}/qr-token`);
     const j = await r.json();
-    if (j.url) { setUrl(j.url); setTtl(j.expiresIn ?? 10); setCountdown(j.expiresIn ?? 10); }
+    if (j.url) {
+      const rotation = Math.max(5, Number(j.refreshIn ?? j.expiresIn ?? 10) || 10);
+      setUrl(j.url);
+      setRefreshIn(rotation);
+      setCountdown(rotation);
+    }
     else if (j.error === "ended") setEnded(true);
     else if (j.error === "paused") setPaused(true);
   }
   useEffect(() => {
     fetchToken();
-    const tk = setInterval(fetchToken, 10_000);
-    const c = setInterval(() => setCountdown(v => (v <= 1 ? v : v - 1)), 1000);
-    return () => { clearInterval(tk); clearInterval(c); };
+    // Rotate on the server-chosen cadence (admin setting or per-session value);
+    // a hardcoded interval slower than the token TTL makes every scan fail.
+    const tk = setInterval(fetchToken, refreshIn * 1000);
+    return () => clearInterval(tk);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshIn]);
+
+  useEffect(() => {
+    const c = setInterval(() => setCountdown(v => (v <= 1 ? v : v - 1)), 1000);
+    return () => clearInterval(c);
   }, []);
 
   useEffect(() => {
@@ -111,7 +122,7 @@ export default function SessionLive({ params }: { params: { id: string } }) {
     });
   }
 
-  const fraction = countdown / Math.max(1, ttl);
+  const fraction = countdown / Math.max(1, refreshIn);
   const qrSize = projector ? 560 : 320;
 
   return (

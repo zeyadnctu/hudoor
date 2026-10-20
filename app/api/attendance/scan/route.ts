@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (!unverifiedSid) { await flag(null, "malformed_token", {}); return NextResponse.json({ status: "error", code: "bad_token", message: "Invalid code" }, { status: 400 }); }
 
     const { data: session } = await svc.from("attendance_sessions")
-      .select("*, courses(code,name_en,name_ar)").eq("id", unverifiedSid).single();
+      .select("*, courses(code,name_en,name_ar,program_id)").eq("id", unverifiedSid).single();
     if (!session) { await flag(null, "unknown_session", {}); return NextResponse.json({ status: "error", code: "bad_token", message: "Unknown session" }, { status: 400 }); }
 
     // 2. verify signature + expiry + active (server time)
@@ -73,28 +73,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", code: "session_closed", message: "Session is not active" }, { status: 400 });
     }
 
-    // 2b. Device/server time drift warning (QR TTL is short; clock skew can cause false expiry)
-    const tokenIat = Math.floor(Date.now() / 1000) - 30; // approx issued-at, allow 30s skew
+    // 2b. Device/server time drift (QR TTL is short; extreme skew is only flagged
+    // for audit — the JWT expiry check above is the hard gate).
     const driftMs = Math.abs(Date.now() - new Date(session.starts_at).getTime());
-    // No hard reject here — just flag for audit if extreme skew
     if (driftMs > 5 * 60 * 1000) {
       await flag(session.id, "time_drift", { driftMs: Math.round(driftMs / 1000) });
     }
 
-    // effective anti-cheat + timing settings (session > course > global)
-    const SET_KEYS = ["present_within_min", "late_after_min", "grace_period_min", "allow_late_scanning", "device_binding_on", "campus_ip_allowlist", "gps_accuracy_margin_m"];
+    // effective anti-cheat + timing settings (session > course > program > global)
+    const SET_KEYS = ["present_within_min", "late_after_min", "grace_period_min", "allow_late_scanning",
+      "device_binding_on", "campus_ip_allowlist", "gps_accuracy_margin_m", "geofence_default_radius_m"];
     const { data: srows } = await svc.from("app_settings").select("scope_type,scope_id,key,value").in("key", SET_KEYS);
+    const courseProgramId = (session as any)?.courses?.program_id ?? null;
     const relevant = ((srows ?? []) as any[]).filter(r =>
       r.scope_type === "global" ||
+      (r.scope_type === "program" && r.scope_id === courseProgramId) ||
       (r.scope_type === "course" && r.scope_id === session.course_id) ||
       (r.scope_type === "session" && r.scope_id === session.id));
     const eff = <T,>(key: string, fb: T): T => effective(relevant.filter(r => r.key === key), key, fb);
     const presentWithin = asNum(eff("present_within_min", 10), 10);
-    const lateAfter = asNum(eff("late_after_min", 20), 20);
+    // a per-session late_after_min set by the professor beats the scoped setting
+    const lateAfter = asNum(
+      session.late_after_min ?? eff("late_after_min", 20), 20
+    );
     const grace = asNum(eff("grace_period_min", 5), 5);
     const allowLate = asBool(eff("allow_late_scanning", true), true);
     const deviceOn = asBool(eff("device_binding_on", true), true);
     const gpsMargin = asNum(eff("gps_accuracy_margin_m", 50), 50);
+    const defaultRadius = asNum(eff("geofence_default_radius_m", 100), 100);
 
     // 3. enrolled?
     const { data: enr } = await svc.from("enrollments").select("id").eq("course_id", session.course_id).eq("student_id", user.id).maybeSingle();
@@ -130,7 +136,8 @@ export async function POST(req: NextRequest) {
       }
       const d = haversineM(lat, lng, session.geofence_lat, session.geofence_lng);
       const margin = Math.min(accuracy ?? 0, gpsMargin);
-      if (d > session.geofence_radius_m + margin) {
+      const radius = asNum(session.geofence_radius_m ?? null, defaultRadius);
+      if (d > radius + margin) {
         await flag(session.id, "outside_geofence", { distance_m: Math.round(d) });
         return NextResponse.json({ status: "error", code: "outside_hall", message: `Outside the hall (${Math.round(d)}m away)` }, { status: 400 });
       }

@@ -21,6 +21,15 @@ export function serviceSupabase() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
+    {
+      auth: { persistSession: false },
+      // Never let Next's patched fetch memoize these reads: every API route
+      // serves live data (scan verdicts, settings, session state), and a stale
+      // auth/scan configuration would be a security bug.
+      global: {
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, cache: "no-store" })
+      }
+    }
   );
 }

@@ -37,7 +37,24 @@ Connect Supabase Auth → Google Cloud OAuth → Hudoor login.
    - **Client Secret**: from Step 1
 4. Click **Save**
 
+### Step 2b: Allow the app callback in Supabase (required!)
+
+**Authentication → URL Configuration** → **Redirect URLs** → add **one per line**:
+
+```
+http://localhost:3000/auth/callback
+https://<your-vercel-domain>.vercel.app/auth/callback
+```
+
+If this is missing, Google returns you to Supabase and Supabase then refuses the
+handshake with `redirect_url_mismatch` / a blank page. Supabase compares these
+entries **exactly** (scheme + host + path, no trailing slash).
+
 Supabase will now route `signInWithOAuth({ provider: "google" })` through Google.
+
+> The app exchanges the returned `?code=` on `/auth/callback`, checks the
+> university-domain rule, creates the `profiles` row (role `student`,
+> status `pending`) and then routes by role. See `lib/auth-flow.ts`.
 
 ---
 
@@ -77,30 +94,27 @@ GOOGLE_CLIENT_SECRET=YOUR_CLIENT_SECRET
 
 ---
 
-## Step 5: Enable email-domain restriction (university email only)
+## Step 5: Email-domain restriction (university email only)
 
-If the admin wants to restrict sign-in to university emails only (任意 student with `@stu.nctu.edu.eg` or `@nctu.edu.eg`):
+Admins control all of this **from the console — no SQL needed**:
 
-Migration `007_auth_google.sql` already adds these defaults to `app_settings`:
+- **Admin → Settings → Auth & login**
+  - `auth_restrict_domain` — Restrict to university email (applies to password **and** Google)
+  - `auth_email_domains` — Allowed domains, comma separated
+- **Admin → Settings → Feature flags** → `google_signin` — turn Google sign-in on/off
+
+Migration `009_program_settings_auth.sql` seeds the defaults and turns
+`google_signin` on:
 
 | key | value | meaning |
 |-----|-------|---------|
 | `auth_restrict_domain` | `false` | set `true` to enable restriction |
 | `auth_email_domains` | `["stu.nctu.edu.eg","nctu.edu.eg"]` | allowed domains |
 
-To enable from SQL:
-```sql
-update app_settings set value = 'true' where key = 'auth_restrict_domain' and scope_type = 'global';
-```
-
-To change allowed domains:
-```sql
-update app_settings
-set value = '["stu.nctu.edu.eg","nctu.edu.eg","edu.eg"]'
-where key = 'auth_email_domains' and scope_type = 'global';
-```
-
-The login page reads these settings and rejects (signs out) any Google/password user whose email domain isn't in the list, showing: **"هذا البريد غير مسموح به. استخدم البريد الجامعي."**
+The app reads these through the public `GET /api/auth/config` route (the
+`app_settings` table itself is admin-only under RLS, so a signed-out browser
+cannot read it directly). Any Google or password user whose email domain isn't
+in the list is signed out immediately with: **"هذا البريد غير مسموح به. استخدم البريد الجامعي."**
 
 ---
 
@@ -122,9 +136,11 @@ Open `http://localhost:3000/login` → click **"المتابعة بحساب جو
 ### Acceptance criteria (Task 1)
 - [ ] Google OAuth client created in Google Cloud Console
 - [ ] Google provider enabled in Supabase Auth with correct callback URL
+- [ ] Supabase **Redirect URLs** contain `/auth/callback` for localhost + production (Step 2b)
+- [ ] Migration `009_program_settings_auth.sql` applied (`google_signin` enabled, program scope allowed)
 - [ ] First-time Google user → redirected to onboarding → profile role = `student` (never upgraded)
 - [ ] Same email already registered with password → linked (no duplicate account)
-- [ ] University email domain restriction toggleable by admin
+- [ ] University email domain restriction toggleable by admin (Settings → Auth & login)
 - [ ] Works on Android (Chrome) and iPhone (Safari)
 
 ---
@@ -133,7 +149,11 @@ Open `http://localhost:3000/login` → click **"المتابعة بحساب جو
 
 | Issue | Fix |
 |-------|-----|
-| `redirect_uri_mismatch` from Google | Add the exact Supabase callback URL to Google Cloud authorized redirect URIs (no trailing slash) |
-| User signs in with Google but no profile | Login page auto-creates a `profiles` row with role `student` and status `pending` on first login |
-| "This email is not allowed" | Admin hasn't enabled your domain in `auth_email_domains`; ask admin to add it |
-| Google button does nothing on iPhone | Ensure site is served over HTTPS (required by Apple for OAuth popups/redirects) |
+| `redirect_uri_mismatch` from Google | Add the exact **Supabase** callback URL (`https://<proj>.supabase.co/auth/v1/callback`) to Google Cloud authorized redirect URIs (no trailing slash) |
+| `redirect_url_mismatch` / blank page from Supabase | Add `http://localhost:3000/auth/callback` and `https://<domain>/auth/callback` to **Supabase → Authentication → URL Configuration → Redirect URLs** (Step 2b) |
+| `access_denied` / "This app is in testing mode" | Finish Google's OAuth **consent screen** verification, or add each tester under "Audience" |
+| User signs in with Google but no profile | `/auth/callback` auto-creates a `profiles` row with role `student` and status `pending`; middleware then sends them to `/onboarding` |
+| "This email is not allowed" | Admin hasn't enabled your domain in **Settings → Auth & login → Allowed email domains** |
+| Google button says it's disabled | Admin turned off the `google_signin` flag in **Settings → Feature flags** |
+| Google button does nothing on iPhone | Ensure site is served over HTTPS (required by Apple for OAuth popups/redirects), and never open the link inside WhatsApp/Facebook (in-app browser) |
+| Professor lands back on the login page right after signing in | Fixed: post-login routing is role-aware (`lib/auth-flow.ts`) — professors go to `/professor`, admins to `/admin`, students to `/student` |

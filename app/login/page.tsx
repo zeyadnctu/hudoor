@@ -6,7 +6,8 @@ import { useApp, Controls } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScanLine, Fingerprint } from "lucide-react";
+import { fetchAuthConfig, landingFor, domainAllowed, type AuthConfig } from "@/lib/auth-flow";
+import { ScanLine, Fingerprint, Loader2 } from "lucide-react";
 
 export default function Login() {
   return (
@@ -24,25 +25,13 @@ function LoginInner() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [domainErr, setDomainErr] = useState("");
+  const [cfg, setCfg] = useState<AuthConfig | null>(null);
 
-  const next = sp.get("next") || "/student";
+  const next = sp.get("next") || "";
 
-  // Load app settings (email domain restriction) on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const sb = browserSupabase();
-        const { data } = await sb.from("app_settings")
-          .select("key,value")
-          .in("key", ["auth_email_domains", "auth_restrict_domain"]);
-        const rows = (data ?? []) as any[];
-        const restrict = rows.find(r => r.key === "auth_restrict_domain")?.value === true;
-        const domainsRaw = rows.find(r => r.key === "auth_email_domains")?.value;
-        const domains = domainsRaw ? String(domainsRaw).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean) : [];
-        (window as any).__hudoor_auth_settings = { restrict, domains };
-      } catch { /* settings optional */ }
-    })();
-  }, []);
+  // Auth config (domain restriction + Google toggle) — must work signed-out,
+  // so it comes from the public API, not from app_settings RLS.
+  useEffect(() => { fetchAuthConfig().then(setCfg).catch(() => setCfg(null)); }, []);
 
   async function go(e: React.FormEvent) {
     e.preventDefault(); setErr(""); setDomainErr(""); setBusy(true);
@@ -58,39 +47,40 @@ function LoginInner() {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) { setErr("login failed"); return; }
 
-    const settings = (window as any).__hudoor_auth_settings || {};
-    if (settings.restrict && settings.domains?.length) {
-      const emailDomain = (user.email ?? "").split("@").pop()?.toLowerCase();
-      if (!emailDomain || !settings.domains.includes(emailDomain)) {
-        await sb.auth.signOut();
-        setDomainErr(t.err_domain || "هذا البريد غير مسموح به. استخدم البريد الجامعي.");
-        return;
-      }
+    const conf = cfg ?? await fetchAuthConfig();
+    if (!domainAllowed(user.email, conf)) {
+      await sb.auth.signOut();
+      setDomainErr(t.err_domain);
+      return;
     }
 
-    let { data: p } = await sb.from("profiles").select("role,status").eq("id", user!.id).single();
+    let { data: p } = await sb.from("profiles").select("role,status").eq("id", user!.id).maybeSingle();
     if (!p) {
+      // Password users may carry a role hint from signup metadata; Google users
+      // always start as students (never upgraded by OAuth metadata).
       const metaRole = (user!.user_metadata as any)?.role;
       const fallback = metaRole === "professor" || metaRole === "admin" ? metaRole : "student";
       const { error: insErr } = await sb.from("profiles").insert({ id: user!.id, email: user!.email, role: fallback, status: "pending" });
       if (insErr) { setErr(insErr.message); return; }
       p = { role: fallback, status: "pending" } as any;
     }
-    const router = r;
-    if (next) { router.push(next); return; }
-    router.push(p?.role === "admin" ? "/admin" : p?.role === "professor" ? "/professor" : "/student");
+    // Role-aware landing: `next` is honored only when this role may open it,
+    // otherwise middleware would bounce us straight back here (ping-pong).
+    r.push(landingFor((p as any)?.role, next));
   }
-
-  const appOrigin = (process.env.NEXT_PUBLIC_APP_URL || location.origin).replace(/\/$/, "");
 
   async function google() {
     setErr(""); setDomainErr(""); setGoogleBusy(true);
     try {
       const sb = browserSupabase();
-      await sb.auth.signInWithOAuth({
+      // location is browser-only: never touch it at render time (prerender would crash).
+      const origin = (process.env.NEXT_PUBLIC_APP_URL || window.location.origin).replace(/\/$/, "");
+      const { error } = await sb.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${appOrigin}/auth/callback?next=${encodeURIComponent(next)}` }
+        options: { redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next || landingFor("student"))}` }
       });
+      if (error) { setErr(error.message); setGoogleBusy(false); }
+      // On success the browser navigates away to Google.
     } catch (e: any) {
       setErr(e.message ?? "Google sign-in failed");
       setGoogleBusy(false);
@@ -143,6 +133,8 @@ function LoginInner() {
     }
   }
 
+  const googleOff = cfg !== null && !cfg.googleEnabled;
+
   return (
     <main className="dot-grid mx-auto min-h-screen w-full max-w-md px-5 py-8">
       <div className="flex justify-end"><Controls /></div>
@@ -169,9 +161,15 @@ function LoginInner() {
         <Button className="w-full !min-h-[56px] !text-lg" disabled={busy}>{t.login}</Button>
       </form>
       <div className="mt-3 space-y-2">
-        <Button variant="outline" className="w-full" disabled={googleBusy} onClick={google}>
-          {googleBusy ? "جاري..." : t.continueGoogle}
-        </Button>
+        {googleOff ? (
+          <p className="rounded-base border border-border px-3 py-3 text-center text-sm font-semibold text-muted-foreground">
+            {t.googleDisabled}
+          </p>
+        ) : (
+          <Button variant="outline" className="w-full" disabled={googleBusy || cfg === null} onClick={google}>
+            {googleBusy ? <><Loader2 size={16} className="animate-spin" /> جاري...</> : t.continueGoogle}
+          </Button>
+        )}
         <Button variant="outline" className="w-full" disabled={passkeyBusy} onClick={passkeyStart}>
           {passkeyBusy ? "جاري..." : <><Fingerprint size={16} strokeWidth={2} /> {t.signInPasskey || "تسجيل الدخول ببصمة الإصبع"}</>}
         </Button>

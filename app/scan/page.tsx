@@ -227,6 +227,11 @@ function ScanInner() {
         action={
           <div className="space-y-2">
             {res.message && !offline && <p className="tnum text-sm text-muted-foreground" dir="auto">{res.message}</p>}
+            {res.code === "unauthenticated" && token && (
+              <Link href={`/login?next=${encodeURIComponent(`/scan?t=${encodeURIComponent(token)}`)}`} className="block">
+                <Button className="w-full">{t.goLogin}</Button>
+              </Link>
+            )}
             <Button className="w-full" onClick={() => location.reload()}>
               <RefreshCw size={18} strokeWidth={2} /> {t.retry}
             </Button>
