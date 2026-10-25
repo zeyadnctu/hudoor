@@ -30,36 +30,9 @@ import { LazyAnimatedList } from "@/components/hudoor/bits";
 import { BottomSheet } from "@/components/hudoor/bottom-sheet";
 import { toast } from "@/components/hudoor/toast";
 import { CommandPalette } from "@/components/hudoor/command-palette";
-import {
-  summariseAttendance,
-  type AttendanceSession,
-  type AttendanceStatus,
-  type AttendanceSummary,
-  type SessionKind
-} from "@/lib/attendance";
 
-type Course = { id: string; code: string; name_en: string; name_ar: string; attendance_rule?: unknown };
-type Sess = {
-  id: string;
-  course_id: string;
-  status: string;
-  starts_at: string;
-  ends_at: string;
-  room_id: string | null;
-  timetable_slots?: { session_type: string | null } | null;
-  courses?: any;
-};
-
-function kindOf(s: Sess): SessionKind {
-  const k = s.timetable_slots?.session_type;
-  return k === "lecture" || k === "section" ? k : "other";
-}
-/** What the session counts as right now: record wins, otherwise a finished session is absent. */
-function finalStatus(s: Sess, rec: any, now: number): AttendanceStatus | null {
-  if (s.status === "cancelled") return null;
-  if (rec) return rec.status;
-  return s.status === "ended" || +new Date(s.ends_at) <= now ? "absent" : null;
-}
+type Course = { id: string; code: string; name_en: string; name_ar: string };
+type Sess = { id: string; course_id: string; status: string; starts_at: string; ends_at: string; room_id: string | null; courses?: any };
 
 function fmtTime(iso: string, locale: string) {
   return new Date(iso).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" });
@@ -114,15 +87,15 @@ export default function StudentHome() {
         const { data: prog } = await sb.from("programs").select("name_ar,name_en").eq("id", det.program_id).maybeSingle();
         if (prog) setProgramName(locale === "ar" ? prog.name_ar : prog.name_en);
       }
-      const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar,attendance_rule)").eq("student_id", user.id);
+      const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar)").eq("student_id", user.id);
       const cs = ((enr ?? []).map((e: any) => e.courses) as Course[]);
       setCourses(cs);
       const { data: rec } = await sb.from("attendance_records").select("id,session_id,status,scanned_at,method,attendance_sessions(course_id)").eq("student_id", user.id).order("scanned_at", { ascending: false }).limit(200);
       setRecords(rec ?? []);
       if (cs.length) {
         const ids = cs.map(c => c.id);
-        const { data: sess } = await sb.from("attendance_sessions").select("id,course_id,status,starts_at,ends_at,room_id,timetable_slots(session_type),courses(code,name_ar,name_en)").in("course_id", ids).order("starts_at", { ascending: false }).limit(200);
-        setSessions(((sess ?? []) as unknown as Sess[]));
+        const { data: sess } = await sb.from("attendance_sessions").select("id,course_id,status,starts_at,ends_at,room_id,courses(code,name_ar,name_en)").in("course_id", ids).order("starts_at", { ascending: false }).limit(200);
+        setSessions(((sess ?? []) as Sess[]));
         try {
           const { data: rms } = await sb.from("rooms").select("id,name_ar,name_en");
           const m: Record<string, string> = {};
@@ -176,60 +149,33 @@ export default function StudentHome() {
     [sessions, todayKey]
   );
 
-  const courseSummaries = useMemo(() => {
-    const m = new Map<string, { summary: AttendanceSummary; list: Sess[] }>();
-    for (const c of courses) {
-      const list = sessions.filter(s => s.course_id === c.id);
-      const attendance: AttendanceSession[] = list.map(s => ({
-        id: s.id,
-        kind: kindOf(s),
-        status: finalStatus(s, recBySession.get(s.id), now)
-      }));
-      m.set(c.id, { summary: summariseAttendance(attendance, c.attendance_rule), list });
-    }
-    return m;
-  }, [courses, sessions, recBySession, now]);
-
   const stats = useMemo(() => {
-    let present = 0;
-    let late = 0;
-    let absent = 0;
-    let counted = 0;
-    for (const { summary } of courseSummaries.values()) {
-      present += summary.present;
-      late += summary.late;
-      absent += summary.absent;
-      counted += summary.counted;
-    }
-    const total = present + late + absent;
-    const desc = sessions
-      .filter(s => finalStatus(s, recBySession.get(s.id), now) != null)
-      .sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at));
+    const ended = sessions.filter(s => s.status === "ended" || +new Date(s.ends_at) <= now);
+    let mine = 0;
+    ended.forEach(s => {
+      const r = recBySession.get(s.id);
+      if (r && (r.status === "present" || r.status === "late")) mine++;
+    });
+    const desc = [...ended].sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at));
     let streak = 0;
     for (const s of desc) {
-      const st = finalStatus(s, recBySession.get(s.id), now);
-      if (st === "present" || st === "late") streak++;
-      else if (st === "excused") continue;
+      const r = recBySession.get(s.id);
+      if (!r) break;
+      if (r.status === "present" || r.status === "late") streak++;
+      else if (r.status === "excused") continue;
       else break;
     }
-    return {
-      total,
-      mine: present + late,
-      p: total === 0 ? 0 : Math.round((counted / total) * 100),
-      streak
-    };
-  }, [courseSummaries, sessions, recBySession, now]);
+    return { total: ended.length, mine, p: ended.length === 0 ? 0 : Math.round((mine / ended.length) * 100), streak };
+  }, [sessions, recBySession, now]);
 
   function pct(courseId: string) {
-    const entry = courseSummaries.get(courseId);
-    if (!entry) return { mine: 0, total: 0, p: 0, threshold: 75, list: [] as Sess[] };
-    return {
-      mine: entry.summary.present + entry.summary.late,
-      total: entry.summary.total,
-      p: entry.summary.percent,
-      threshold: entry.summary.threshold,
-      list: entry.list
-    };
+    const list = sessions.filter(s => s.course_id === courseId && (s.status === "ended" || +new Date(s.ends_at) <= now));
+    let mine = 0;
+    list.forEach(s => {
+      const r = recBySession.get(s.id);
+      if (r && (r.status === "present" || r.status === "late")) mine++;
+    });
+    return { mine, total: list.length, p: list.length === 0 ? 0 : Math.round((mine / list.length) * 100), list };
   }
 
   const firstName = useMemo(() => {
@@ -279,7 +225,7 @@ export default function StudentHome() {
       toast.success(t.createdOk);
       fetch("/api/student/courses").then(r => r.json()).then(j2 => setProgramCourses(j2.rows ?? [])).catch(() => {});
       const sb = browserSupabase();
-      const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar,attendance_rule)").eq("student_id", userId);
+      const { data: enr } = await sb.from("enrollments").select("course_id, courses(id,code,name_en,name_ar)").eq("student_id", userId);
       setCourses(((enr ?? []).map((e: any) => e.courses) as Course[]));
     } else {
       toast.error(j.error ?? "error");
@@ -349,7 +295,8 @@ export default function StudentHome() {
             <div className="p-4 text-muted-foreground"><p className="font-semibold">{t.noSessionsToday}</p><p className="text-[13px]">{t.noSessionsHint}</p></div>
           )}
           {todayList.map(s => {
-            const st = finalStatus(s, recBySession.get(s.id), now);
+            const r = recBySession.get(s.id);
+            const ended = s.status === "ended" || +new Date(s.ends_at) <= now;
             return (
               <TimelineRow
                 key={s.id}
@@ -358,7 +305,7 @@ export default function StudentHome() {
                 courseCode={s.courses?.code}
                 courseName={locale === "ar" ? s.courses?.name_ar : s.courses?.name_en}
                 room={s.room_id ? rooms[s.room_id] : undefined}
-                status={st ?? (s.status === "cancelled" ? "ended" : s.status)}
+                status={r ? r.status : ended ? "absent" : s.status}
                 live={s.status === "active"}
               />
             );
@@ -384,21 +331,20 @@ export default function StudentHome() {
                 attended={s.mine}
                 total={s.total}
                 percent={s.p}
-                threshold={s.threshold}
                 noSessionsLabel={t.noSessionsYet}
                 expanded={expanded === c.id}
                 onToggle={() => setExpanded(expanded === c.id ? null : c.id)}
                 sessions={s.list
                   .slice()
-                  .filter(sess => finalStatus(sess, recBySession.get(sess.id), now) != null)
                   .sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at))
                   .map(sess => {
-                    const st = finalStatus(sess, recBySession.get(sess.id), now) as AttendanceStatus;
+                    const r = recBySession.get(sess.id);
+                    const ended = sess.status === "ended" || +new Date(sess.ends_at) <= now;
                     return {
                       id: sess.id,
                       dateLabel: new Date(sess.starts_at).toLocaleDateString(locale === "ar" ? "ar-EG" : "en-US", { weekday: "short", day: "numeric", month: "numeric" }),
                       timeLabel: fmtTime(sess.starts_at, locale),
-                      status: st,
+                      status: r ? r.status : ended ? "absent" : sess.status,
                       statusLabel: undefined
                     };
                   })}
