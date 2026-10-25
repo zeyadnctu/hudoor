@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { can, ownsCourse, COURSE_SCOPED, type Action, type Grant } from "@/lib/permissions";
 import { clientIp } from "@/lib/geo";
+import { localSessionUser, expiringSoon, cookieLookupOf } from "@/lib/jwt-local";
 
 export type Ctx = {
   svc: ReturnType<typeof serviceSupabase>;
@@ -83,8 +84,17 @@ export async function requirePerm(
 ): Promise<{ ok: true; ctx: Ctx } | { ok: false; res: NextResponse }> {
   const deny = (code: string, status = 403) =>
     ({ ok: false as const, res: NextResponse.json({ error: code }, { status }) });
-  const sb = serverSupabase();
-  const { data: { user } } = await sb.auth.getUser();
+  // Fast path: verify the session JWT locally (no auth-server round trip).
+  // Falls back to the network getUser() only when local verification is
+  // unavailable or the token is about to expire (then Supabase refreshes it).
+  let user: { id: string } | null | undefined = undefined;
+  const local = await localSessionUser(cookieLookupOf(req.headers.get("cookie")));
+  if (local && !expiringSoon(local)) user = { id: local.id };
+  if (user === undefined) {
+    const sb = serverSupabase();
+    const { data: { user: u } } = await sb.auth.getUser();
+    user = u;
+  }
   if (!user) return deny("unauth", 401);
   const svc = serviceSupabase();
   const { data: p } = await svc.from("profiles")

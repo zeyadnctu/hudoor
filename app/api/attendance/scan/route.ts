@@ -5,6 +5,7 @@ import { verifyQrToken, isNonceReplay } from "@/lib/qr-token";
 import { haversineM, clientIp, ipAllowed } from "@/lib/geo";
 import { rateLimit } from "@/lib/rate-limit";
 import { effective, asNum, asBool } from "@/lib/settings";
+import { localSessionUser, expiringSoon, cookieLookupOf } from "@/lib/jwt-local";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", code: "rate_limited", message: "Too many attempts, try later" }, { status: 429 });
 
     // 1. auth + role + approved
-    const sb = serverSupabase();
-    const { data: { user } } = await sb.auth.getUser();
+    // Fast path: verify the session JWT locally; fall back to the Auth server
+    // only when that fails (also refreshes the session there).
+    let user: { id: string } | null | undefined = undefined;
+    const localUser = await localSessionUser(cookieLookupOf(req.headers.get("cookie")));
+    if (localUser && !expiringSoon(localUser)) user = { id: localUser.id };
+    if (user === undefined) {
+      const sb = serverSupabase();
+      const { data: { user: u } } = await sb.auth.getUser();
+      user = u;
+    }
     const svc = serviceSupabase();
     async function flag(sessionId: string | null, reason: string, extra: any = {}) {
       await svc.from("flagged_attempts").insert({

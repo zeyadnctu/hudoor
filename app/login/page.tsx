@@ -37,14 +37,14 @@ function LoginInner() {
     e.preventDefault(); setErr(""); setDomainErr(""); setBusy(true);
     try {
       const sb = browserSupabase();
-      const { error } = await sb.auth.signInWithPassword({ email, password });
+      // signInWithPassword already returns the user — no extra auth round trip.
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
       if (error) { setErr(error.message); return; }
-      await afterSignIn(sb);
+      await afterSignIn(sb, data.user);
     } finally { setBusy(false); }
   }
 
-  async function afterSignIn(sb: ReturnType<typeof browserSupabase>) {
-    const { data: { user } } = await sb.auth.getUser();
+  async function afterSignIn(sb: ReturnType<typeof browserSupabase>, user: import("@supabase/supabase-js").User | null) {
     if (!user) { setErr("login failed"); return; }
 
     const conf = cfg ?? await fetchAuthConfig();

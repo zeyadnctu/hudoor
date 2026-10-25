@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { jwtVerify } from "jose";
+import { localSessionUser, expiringSoon, type LocalUser } from "@/lib/jwt-local";
 
 type ViewAs = { tid: string; email: string; role: string } | null;
 
@@ -29,26 +30,64 @@ export async function middleware(req: NextRequest) {
       }
     }
   );
-  const { data: { user } } = await supabase.auth.getUser();
   const path = req.nextUrl.pathname;
-  const guard = (prefix: string) => path === prefix || path.startsWith(prefix + "/");
-  if (guard("/admin") || guard("/professor") || guard("/student") || guard("/onboarding")) {
+  const guarded = ["/admin", "/professor", "/student", "/onboarding"].some(p => path === p || path.startsWith(p + "/"));
+
+  // FAST PATH: verify the session cookie's JWT locally (0 network calls).
+  // Every navigation used to pay a round trip to the Auth server.
+  let user: { id: string } | null = null;
+  const local: LocalUser | null = guarded
+    ? await localSessionUser((name: string) => req.cookies.get(name)?.value)
+    : null;
+  if (local && !expiringSoon(local)) {
+    user = { id: local.id };
+  } else {
+    // Slow path (also refreshes the session + rewrites cookies when the token
+    // was about to expire or verification was impossible locally).
+    const { data: { user: u } } = await supabase.auth.getUser();
+    user = u;
+  }
+
+  if (guarded) {
     if (!user) {
       const url = req.nextUrl.clone();
       url.pathname = "/login";
       url.searchParams.set("next", path);
       return NextResponse.redirect(url);
     }
-    const { data: profile } = await supabase.from("profiles").select("role,custom_role,status").eq("id", user.id).single();
+    // One PostgREST call: role row + child student_details in the same embed
+    // (previously three sequential round trips per navigation: auth + profile
+    // + student_details).
+    let profile: any = null; let hasStudentDetails: boolean | null = null;
+    {
+      const { data, error } = await supabase.from("profiles")
+        .select("role,custom_role,status,is_active,student_details(id)")
+        .eq("id", user.id).single();
+      if (!error && data) {
+        profile = data;
+        hasStudentDetails = Array.isArray(data.student_details) ? data.student_details.length > 0 : false;
+      }
+    }
     if (!profile) {
-      const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
+      // Embed may be unavailable — degrade to the two separate lookups.
+      const { data: p } = await supabase.from("profiles").select("role,custom_role,status,is_active").eq("id", user.id).single();
+      if (!p) {
+        const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
+      }
+      profile = p;
+      if ((profile as any).role === "student") {
+        const { data: det } = await supabase.from("student_details").select("id").eq("user_id", user.id).maybeSingle();
+        hasStudentDetails = !!det;
+      } else {
+        hasStudentDetails = true;
+      }
     }
     const p = profile as any;
     // New accounts (incl. Google sign-up) land with status "pending"; they must
     // still reach /onboarding to complete student_details. Approval gate applies
     // once they try to enter /student or other role routes.
     if (p.status !== "approved" || p.is_active === false) {
-      if (!guard("/onboarding")) {
+      if (!path.startsWith("/onboarding")) {
         const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
       }
     }
@@ -61,27 +100,29 @@ export async function middleware(req: NextRequest) {
     const va = await viewAs(req);
     const effRole = va ? va.role : role;
 
-    if (guard("/admin") && !(role === "admin" || role === "coordinator" || (custom !== null && custom !== "ta"))) {
-      const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+    if (path === "/admin" || path.startsWith("/admin/")) {
+      if (!(role === "admin" || role === "coordinator" || (custom !== null && custom !== "ta"))) {
+        const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+      }
     }
-    if (guard("/professor") && !(effRole === "professor" || effRole === "admin" || effRole === "ta")) {
-      const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+    if (path === "/professor" || path.startsWith("/professor/")) {
+      if (!(effRole === "professor" || effRole === "admin" || effRole === "ta")) {
+        const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+      }
     }
-    if (guard("/student") && !(effRole === "student" || effRole === "admin" || effRole === "ta")) {
-      const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+    if (path === "/student" || path.startsWith("/student/")) {
+      if (!(effRole === "student" || effRole === "admin" || effRole === "ta")) {
+        const url = req.nextUrl.clone(); url.pathname = "/login"; return NextResponse.redirect(url);
+      }
     }
     if (va) {
       // expose target to layouts/pages (read-only banner)
       res.headers.set("x-view-as", va.tid);
       res.headers.set("x-view-as-role", va.role);
     }
-    if (guard("/onboarding")) return res;
     // students with incomplete onboarding -> force wizard (skipped in view-as)
-    if (!va && (role === "student" && !isTa)) {
-      const { data: det } = await supabase.from("student_details").select("id").eq("user_id", user.id).maybeSingle();
-      if (!det && !guard("/onboarding")) {
-        const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
-      }
+    if (!va && role === "student" && !isTa && hasStudentDetails === false && !path.startsWith("/onboarding")) {
+      const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
     }
   }
   return res;
