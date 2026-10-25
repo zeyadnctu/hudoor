@@ -86,7 +86,12 @@ export async function middleware(req: NextRequest) {
       .eq("id", user.id).single();
     if (!error && data) {
       profile = data;
-      hasStudentDetails = Array.isArray(data.student_details) ? data.student_details.length > 0 : false;
+      // PostgREST returns the to-one embed as an OBJECT {"id": …} (profiles.id →
+      // student_details.user_id is a unique FK). Checking Array.isArray() only
+      // evaluated every student as detail-less and pinned them all to the
+      // wizard — treat both shapes.
+      const det = (data as any).student_details;
+      hasStudentDetails = Array.isArray(det) ? det.length > 0 : !!(det && det.id);
     }
   }
   if (!profile) {
