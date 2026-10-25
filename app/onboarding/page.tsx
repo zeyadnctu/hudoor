@@ -64,7 +64,25 @@ export default function Onboarding() {
         sb.from("programs").select("*").eq("archived", false).order("code")
       ]);
       const hasDetails = !!(detRes.data as any)?.id;
-      const status = (profRes.data as any)?.status;
+      let status = (profRes.data as any)?.status;
+      // Self-repair: login/signup normally create the profile row, but if that
+      // insert failed the user used to be caught in a middleware redirect loop
+      // here. Insert it under the "self insert profile" RLS policy and continue.
+      if (status == null) {
+        const { error: insProfErr } = await sb.from("profiles").insert({
+          id: uid, email: session?.user?.email ?? "", role: "student", status: "pending"
+        });
+        const race = insProfErr && (insProfErr.code === "23505" || insProfErr.message?.includes("duplicate key"));
+        if (!insProfErr || race) {
+          const { data: p2 } = await sb.from("profiles").select("status").eq("id", uid).maybeSingle();
+          status = (p2 as any)?.status ?? "pending";
+        } else {
+          // could not create or read a profile — surface instead of looping
+          setFormError(insProfErr.message);
+          setLoading(false);
+          return;
+        }
+      }
       // partner programs first, then the rest by code
       const rows = (progRes.data ?? []) as any[];
       rows.sort((a, b) => (a.type === b.type ? a.code.localeCompare(b.code) : a.type === "partner" ? -1 : 1));

@@ -72,7 +72,13 @@ export async function middleware(req: NextRequest) {
       // Embed may be unavailable — degrade to the two separate lookups.
       const { data: p } = await supabase.from("profiles").select("role,custom_role,status,is_active").eq("id", user.id).single();
       if (!p) {
-        const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
+        // Profile row missing (signup inserted it, but that step can fail).
+        // NEVER redirect /onboarding -> /onboarding: that is an infinite 307
+        // loop. Let the onboarding page load and self-repair the row instead.
+        if (!path.startsWith("/onboarding")) {
+          const url = req.nextUrl.clone(); url.pathname = "/onboarding"; return NextResponse.redirect(url);
+        }
+        return res;
       }
       profile = p;
       if ((profile as any).role === "student") {
