@@ -188,3 +188,74 @@ Resolution of previous findings + this round's 7-item checklist:
 - `CRON_SECRET` must be set in Vercel env (else the endpoint falls back to signed-in lazy tick).
 - Optional Vercel cron entry for the sessions endpoint (currently lazy-tick works).
 - Backup scripts + Sentry/monitoring + staging still open (documented in RUNBOOK gap list).
+
+---
+
+## Update — Mon Oct 26 2026 (student surfaces, attendance math, privacy, scan reliability)
+
+Baseline at the start of this pass: `tsc` clean, **88 tests** green (25 suites,
+1 intentionally skipped PDF fixture), **45/45 static pages** in `next build`,
+lint exit 0 with warnings only.
+
+**Resolved from earlier sections**
+- ~~Consent text + privacy policy + terms pages~~ → `/privacy` and `/terms`
+  ship bilingual content (`lib/legal.ts`, version 1.0) and signup requires an
+  explicit consent checkbox. Consent version is stored in auth metadata and
+  copied into the `consents` ledger when migration 014 is present.
+- ~~Data export / delete / anonymize on request~~ → self-service JSON export at
+  `GET /api/student/export`, scoped to the signed-in caller. Account deletion
+  remains a reviewed `data_change` request (retention/academic-record
+  decisions cannot be automated safely yet).
+- ~~PWA manifest icons missing~~ → 192/512/Apple touch icons exist and match
+  the manifest; maskable safe area checked.
+- ~~Touch targets / reduced motion~~ → 44 px minimum on the new screens; Me has
+  explicit reduced-motion and text-size preferences.
+- Attendance math is unified in `lib/attendance.ts` (excused excluded, late
+  weight default 1, lecture/section combine rules, per-course threshold,
+  safe-miss math) with 14 unit tests.
+
+**New findings and decisions**
+- **Attendance disagreement (high, fixed).** Student home, Attendance and the
+  shared course card used different formulas; late scans and approved excuses
+  produced different percentages. Now one function feeds all three.
+- **Duplicate `tally` kind (medium, fixed).** Aggregates were always labelled
+  `"other"`, so lecture/section summaries were misleading.
+- **Manual scan fallback (security, constrained).** The fallback accepts a full
+  scan URL or raw compact JWT only. Short join codes are rejected so the
+  signed-token model is not weakened. `token_expired` and `bad_token` are
+  distinct.
+- **Scan retries (medium, mitigated).** Client idempotency key + 90 s
+  per-instance cache; DB unique `(session_id, student_id)` remains the hard
+  guarantee. Unauthenticated attempts are flagged; account-level rate limit
+  added.
+- **Migration 014 unapplied (operational, open).** Adds
+  `notification_prefs`, `push_subscriptions`, `consents`, RLS and two
+  notification defaults. Additive and safe, but not applied live in this
+  phase; the Me screen falls back to `localStorage` and says so.
+- **Passkeys still broken (high, open).** Routes target the pre-v14
+  `@simplewebauthn/server` shape, and authentication finish does not create a
+  session. The UI lists existing passkeys but deliberately offers no
+  registration; device binding remains stored-ID + admin reset.
+- **`npm install` advisories (open).** 35 advisories reported (5 low,
+  2 moderate, 27 high, 1 critical) in the dependency tree; not triaged. Most
+  are likely transitive build/dev dependencies, but this must be checked
+  before launch.
+- **Lint gate restored.** `next lint` previously could not run because the
+  toolchain was absent. ESLint 8 + `eslint-config-next` added; two real errors
+  fixed (conditional hooks in the in-app scanner, unknown rule disable).
+
+**Verified in this pass**
+- `npx tsc --noEmit` — clean.
+- `npm test` — 88 passing, 0 failing, 25 suites, 1 skipped fixture.
+- `npm run lint` — exit 0; warnings only (mostly `react-hooks/exhaustive-deps`,
+  two `<img>` warnings in pre-existing components).
+- `npx next build` — succeeds; 45/45 static pages, including the new routes.
+
+**Still open (ordered by risk)**
+1. Apply migration 014 and verify RLS on the new tables in staging.
+2. Fix WebAuthn v14 registration/authentication and session creation, or
+   remove the routes.
+3. Triage the dependency advisories and add `npm audit` to CI.
+4. RLS cross-tenant test suite; anti-relay signals beyond replay.
+5. Load test the scan endpoint at the stated 300 scans/10 s target.
+6. Legal review of the published policy and a hosting/data-residency decision.

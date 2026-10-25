@@ -9,15 +9,19 @@
 
 ## Deploy
 1. Merge to `main`. CI (`.github/workflows/ci.yml`) runs typecheck + tests + build.
-2. Promote staging deploy from `main` (Vercel auto-deploys staging environment).
-3. Smoke test staging `/api/health` (expect status ok).
-4. Promote to production manually in Vercel (production environment variables).
+2. Apply any new migration in order (current head: `014_student_prefs.sql`) to
+   staging, then production, before promoting code that depends on it. Migration
+   014 is additive; the Me screen falls back to local preferences until it is
+   applied, and the consent ledger stays empty.
+3. Promote staging deploy from `main` (Vercel auto-deploys staging environment).
+4. Smoke test staging `/api/health` (expect status ok).
+5. Promote to production manually in Vercel (production environment variables).
 
 ## Rollback
 - Vercel: instant rollback to previous deployment.
 - Database: revert via Supabase migrations (apply revert migration); for data-loss
   rollback, use Point-in-Time Recovery from Supabase (configure before going live).
-- Never drop migrate-down on the way forward; keep ordered migrations (001..006).
+- Never drop migrate-down on the way forward; keep ordered migrations (001..014).
 
 ## Restore a backup
 - Supabase Dashboard → Database → Backups → restore PITR or daily backup.

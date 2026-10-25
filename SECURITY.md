@@ -24,11 +24,20 @@
 - Service-role key server-side only.
 
 ## Known limitations (deferred)
-- WebAuthn passkey not implemented (stored device ID only).
+- WebAuthn passkey not implemented (stored device ID only). The UI lists
+  existing passkeys but offers no registration until the v14 API and session
+  creation are fixed.
 - 2FA for admins not implemented.
 - Anti-relay signals (multi-account device, impossible travel, edges of token
-  window) are flagged conceptually; full computation not yet built.
-- Consent/privacy/anonymize data on request not implemented.
+  window) are flagged conceptually; full computation not yet built. Replay of
+  an old code is detected by the `qr_scans` ledger.
+- Consent is captured at signup (metadata + `consents` ledger when migration
+  014 is applied), and self-service export exists. Account deletion/anonymize
+  remains a reviewed request because retention and academic-record rules
+  cannot be automated safely. Privacy/terms text still needs university legal
+  review.
+- Migration 014 (`notification_prefs`, `push_subscriptions`, `consents`) is
+  committed but not yet applied live.
 - RLS policy test suite not in repo (RLS is provisioned at Supabase DB via
   admin dashboard; verify before going live).
 
