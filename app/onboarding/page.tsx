@@ -15,6 +15,38 @@ import { School, Loader2 } from "lucide-react";
 
 const DRAFT_KEY = "hudoor_onboarding_draft";
 
+/** Auto-detect admin approval while the waiting screen is up: the student's
+ *  dashboard opens by itself the moment they are approved (no manual reload,
+ *  no stale screen). Polls at 5s then every 10s; silent on failure. */
+function ApprovalPoller({ onApproved }: { onApproved: () => void }) {
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sb = browserSupabase();
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid || !alive) return;
+      let delayMs = 5_000;
+      const check = async () => {
+        if (!alive) return;
+        try {
+          const { data: prof } = await sb.from("profiles").select("status").eq("id", uid).maybeSingle();
+          if ((prof as any)?.status === "approved") { onApproved(); return; }
+        } catch { /* next tick retries */ }
+        if (alive) {
+          delayMs = 10_000;
+          timer = setTimeout(check, delayMs);
+        }
+      };
+      timer = setTimeout(check, delayMs);
+    })();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
 /* Onboarding flow:
    - no details yet            → wizard (3 steps)
    - details + approved        → straight to /student (1 hop, no loop)
@@ -179,6 +211,7 @@ export default function Onboarding() {
   if (waiting || done) {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-16">
+        <ApprovalPoller onApproved={() => r.replace("/student")} />
         <EmptyState
           icon={<School size={28} strokeWidth={2} />}
           title={t.onboardingDone}
