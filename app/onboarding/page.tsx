@@ -304,7 +304,10 @@ export default function Onboarding() {
         <LazyStepper
           step={step}
           onStepChange={handleStepChange}
-          onCompleted={handleSubmit(submit) as () => void}
+          onCompleted={async () => {
+            if (!(await gate(["program_id", "level_id", "section_id"]))) return;
+            await handleSubmit(submit)();
+          }}
           labels={{ back: t.back, next: t.next, complete: saving ? "..." : t.save }}
           steps={[
             {
