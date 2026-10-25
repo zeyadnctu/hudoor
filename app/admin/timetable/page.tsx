@@ -178,7 +178,6 @@ export default function TimetablePage() {
       return { day: s.day, starts_at: st, ends_at: en, room_id: s.room_id, professor_id: s.instructor_id ?? s.professor_id, section: `${s.level_id ?? ""}/${s.group_id ?? ""}`, course_id: s.course_id };
     });
     // clash util import is static; use dynamic shape compatible with Slot
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return detectClashes([...others, cand as any]);
   }
 

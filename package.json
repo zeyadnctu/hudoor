@@ -9,13 +9,13 @@
     "lint": "next lint",
     "verify:palette": "node scripts/palette-check.mjs",
     "bundle:report": "next build && node scripts/bundle-budget.mjs",
-    "test": "tsc lib/permissions.ts lib/settings.ts lib/match.ts lib/timetable.ts lib/ntg-parse.ts lib/recurrence.ts lib/qr-token.ts lib/geo.ts lib/rate-limit.ts lib/validators.ts --outDir .testbuild --module nodenext --target es2020 --skipLibCheck && node --test tests/*.test.mjs"
+    "test": "tsc lib/permissions.ts lib/settings.ts lib/attendance.ts lib/scan-input.ts lib/match.ts lib/timetable.ts lib/ntg-parse.ts lib/recurrence.ts lib/qr-token.ts lib/geo.ts lib/rate-limit.ts lib/validators.ts --outDir .testbuild --module nodenext --target es2020 --skipLibCheck && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.6.0",
-    "@simplewebauthn/server": "^14.0.3",
     "@radix-ui/react-direction": "^1.2.0",
     "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.44.0",
     "@tanstack/react-query": "^5.62.7",
@@ -63,6 +63,8 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.5",
     "postcss": "^8.4.39",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.5.0"

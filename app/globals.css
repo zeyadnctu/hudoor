@@ -280,6 +280,20 @@
   }
 }
 
+/* Explicit user preference from Me → Reduce motion. Same effect as the OS
+   setting, but the app can switch it without changing system settings. */
+.reduce-motion {
+  scroll-behavior: auto;
+}
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* register ruled paper (the product's texture, not decoration) */
 .ruled {
   background-image: repeating-linear-gradient(

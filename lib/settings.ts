@@ -41,12 +41,13 @@ export function verdict(
   return "absent";
 }
 
-/** Participation score 0..100 from present/late/total with configurable weights. */
+/** Participation score 0..100 from present/late/total with configurable weights.
+ *  Late counts fully by default (Master Build Prompt §5). */
 export function participation(
   present: number, late: number, total: number,
   formula: { lateWeight?: number } = {}
 ): number {
   if (total <= 0) return 0;
-  const w = formula.lateWeight ?? 0.5;
+  const w = Math.min(1, Math.max(0, formula.lateWeight ?? 1));
   return Math.max(0, Math.min(100, Math.round(((present + late * w) / total) * 100)));
 }

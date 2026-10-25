@@ -13,6 +13,7 @@ export function CourseAttendanceCard({
   total,
   percent,
   noSessionsLabel,
+  threshold = 75,
   expanded,
   onToggle,
   sessions
@@ -23,11 +24,12 @@ export function CourseAttendanceCard({
   total: number;
   percent: number;
   noSessionsLabel: string;
+  threshold?: number;
   expanded: boolean;
   onToggle: () => void;
   sessions?: { id: string; dateLabel: string; timeLabel: string; status: string; statusLabel?: string }[];
 }) {
-  const low = total > 0 && percent < 75;
+  const low = total > 0 && percent < threshold;
   const barTone = low ? "bg-late-fill" : "bg-present-fill";
   const pctTone = total === 0 ? "text-muted-foreground" : low ? "text-late-ink" : "text-present-ink";
   return (

@@ -34,7 +34,7 @@ export function SegmentedControl<T extends string>({
           key={o.value}
           value={o.value}
           className={cn(
-            "min-h-[36px] gap-1.5 rounded-base px-3 text-[13px] font-semibold text-muted-foreground",
+            "min-h-[44px] gap-1.5 rounded-base px-3 text-[13px] font-semibold text-muted-foreground",
             "data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-none"
           )}
         >

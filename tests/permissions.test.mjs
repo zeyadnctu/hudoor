@@ -72,7 +72,8 @@ describe("settings", () => {
     assert.equal(verdict(t0 + 15 * 60_000, t0, { presentWithinMin: 10, lateAfterMin: 20, graceMin: 0, allowLate: false }), "absent");
   });
   it("participation formula is bounded", () => {
-    assert.equal(participation(8, 2, 10), 90);
+    assert.equal(participation(8, 2, 10), 100);
+    assert.equal(participation(8, 2, 10, { lateWeight: 0.5 }), 90);
     assert.equal(participation(0, 0, 0), 0);
     assert.equal(participation(10, 0, 10), 100);
   });
