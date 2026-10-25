@@ -91,7 +91,7 @@ export default function InAppScan() {
         <EmptyState
           icon={<CameraOff size={28} />}
           title={t.err_iphone_https}
-          hint={(t as any).err_iphone_https_fix || t.err_camera_generic_fix}
+          hint={(t as any).err_iphone_https_fix || (t as any).err_camera_fix || ""}
           withGrid
           action={
             <Button className="w-full" onClick={() => location.reload()}>
