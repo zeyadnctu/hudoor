@@ -33,9 +33,14 @@ export async function POST(req: NextRequest) {
     const localUser = await localSessionUser(cookieLookupOf(req.headers.get("cookie")));
     if (localUser && !expiringSoon(localUser)) user = { id: localUser.id };
     if (user === undefined) {
-      const sb = serverSupabase();
-      const { data: { user: u } } = await sb.auth.getUser();
-      user = u;
+      // Never let a broken cookie turn into a 500: the stored session may be
+      // corrupted, expired, or the Auth server unreachable — all mean
+      // "not authenticated here".
+      try {
+        const sb = serverSupabase();
+        const { data: { user: u } } = await sb.auth.getUser();
+        user = u;
+      } catch { user = null; }
     }
     const svc = serviceSupabase();
     async function flag(sessionId: string | null, reason: string, extra: any = {}) {
