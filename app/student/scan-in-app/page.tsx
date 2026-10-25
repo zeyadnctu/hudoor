@@ -8,6 +8,8 @@ import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { PermissionPrimer } from "@/components/hudoor/permission-primer";
 import { EmptyState } from "@/components/hudoor/empty-state";
+import { ManualCodeEntry } from "@/components/hudoor/manual-code-entry";
+import { extractScanToken } from "@/lib/scan-input";
 import { CameraOff, Camera, RefreshCw, ExternalLink } from "lucide-react";
 
 function isInAppBrowser(): boolean {
@@ -52,60 +54,14 @@ export default function InAppScan() {
   // bump to remount the Scanner and re-request the camera on retry
   const [scanKey, setScanKey] = useState(0);
   const busyRetries = useRef(0);
+  const routed = useRef(false);
   const inApp = typeof window !== "undefined" ? isInAppBrowser() : false;
   const ios = typeof window !== "undefined" ? isIOS() : false;
   const secure = typeof window !== "undefined" ? isSecureContext() : true;
 
-  if (inApp) {
-    return (
-      <main className="mx-auto w-full max-w-md px-4 py-10">
-        <EmptyState
-          icon={<CameraOff size={28} />}
-          title={t.err_in_app}
-          hint={t.err_in_app_fix}
-          withGrid
-          action={
-            <div className="space-y-2">
-              <Button
-                className="w-full"
-                onClick={() => {
-                  try {
-                    window.open(location.href, "_blank", "noopener,noreferrer");
-                  } catch {}
-                }}
-              >
-                <ExternalLink size={18} strokeWidth={2} /> {t.openInBrowser}
-              </Button>
-              <Button variant="outline" className="w-full" onClick={() => r.push("/student")}>
-                {t.back}
-              </Button>
-            </div>
-          }
-        />
-      </main>
-    );
-  }
-
-  if (ios && !secure) {
-    return (
-      <main className="mx-auto w-full max-w-md px-4 py-10">
-        <EmptyState
-          icon={<CameraOff size={28} />}
-          title={t.err_iphone_https}
-          hint={(t as any).err_iphone_https_fix || (t as any).err_camera_fix || ""}
-          withGrid
-          action={
-            <Button className="w-full" onClick={() => location.reload()}>
-              <RefreshCw size={18} strokeWidth={2} /> {t.retry}
-            </Button>
-          }
-        />
-      </main>
-    );
-  }
-
   const retry = useCallback(() => {
     busyRetries.current = 0;
+    routed.current = false;
     setErrMsg("");
     setPhase("scanning");
     setScanKey((k) => k + 1);
@@ -175,6 +131,54 @@ export default function InAppScan() {
       .catch(() => {});
   }, [phase]);
 
+  if (inApp) {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<CameraOff size={28} />}
+          title={t.err_in_app}
+          hint={t.err_in_app_fix}
+          withGrid
+          action={
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  try {
+                    window.open(location.href, "_blank", "noopener,noreferrer");
+                  } catch {}
+                }}
+              >
+                <ExternalLink size={18} strokeWidth={2} /> {t.openInBrowser}
+              </Button>
+              <Button variant="outline" className="w-full" onClick={() => r.push("/student")}>
+                {t.back}
+              </Button>
+            </div>
+          }
+        />
+      </main>
+    );
+  }
+
+  if (ios && !secure) {
+    return (
+      <main className="mx-auto w-full max-w-md px-4 py-10">
+        <EmptyState
+          icon={<CameraOff size={28} />}
+          title={t.err_iphone_https}
+          hint={(t as any).err_iphone_https_fix || (t as any).err_camera_fix || ""}
+          withGrid
+          action={
+            <Button className="w-full" onClick={() => location.reload()}>
+              <RefreshCw size={18} strokeWidth={2} /> {t.retry}
+            </Button>
+          }
+        />
+      </main>
+    );
+  }
+
   if (phase === "denied") {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-10">
@@ -185,6 +189,9 @@ export default function InAppScan() {
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
+        <div className="mt-6 rounded-card border border-border bg-card p-4">
+          <ManualCodeEntry />
+        </div>
       </main>
     );
   }
@@ -199,6 +206,9 @@ export default function InAppScan() {
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
+        <div className="mt-6 rounded-card border border-border bg-card p-4">
+          <ManualCodeEntry />
+        </div>
       </main>
     );
   }
@@ -213,6 +223,9 @@ export default function InAppScan() {
           withGrid
           action={<Button onClick={() => r.push("/student")}>{t.back}</Button>}
         />
+        <div className="mt-6 rounded-card border border-border bg-card p-4">
+          <ManualCodeEntry />
+        </div>
       </main>
     );
   }
@@ -227,6 +240,9 @@ export default function InAppScan() {
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
+        <div className="mt-6 rounded-card border border-border bg-card p-4">
+          <ManualCodeEntry />
+        </div>
       </main>
     );
   }
@@ -255,17 +271,18 @@ export default function InAppScan() {
         <Scanner
           key={scanKey}
           onScan={(codes) => {
+            if (routed.current) return;
             const text = codes?.[0]?.rawValue ?? "";
-            if (!text) return;
-            try {
-              const u = new URL(text);
-              r.push(`/scan?t=${encodeURIComponent(u.searchParams.get("t") ?? text)}`);
-            } catch {
-              r.push(`/scan?t=${encodeURIComponent(text)}`);
-            }
+            const token = extractScanToken(text);
+            if (!token) return; // unrelated QR — keep scanning
+            routed.current = true;
+            r.push(`/scan?t=${encodeURIComponent(token)}`);
           }}
           onError={handleError}
         />
+      </div>
+      <div className="mt-4 rounded-card border border-border bg-card p-4">
+        <ManualCodeEntry />
       </div>
     </main>
   );

@@ -9,6 +9,15 @@ import { localSessionUser, expiringSoon, cookieLookupOf } from "@/lib/jwt-local"
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Best-effort idempotency for retries on the same warm instance. The real
+ * guarantee is the unique (session_id, student_id) row in attendance_records;
+ * this cache only avoids repeating work for a client that retries a request
+ * whose response was lost. Entries expire after 90 seconds.
+ */
+const scanIdempotency = new Map<string, { at: number; body: any; status: number }>();
+const IDEMPOTENCY_TTL_MS = 90_000;
+
 function isInAppBrowser(ua: string): boolean {
   return /whatsapp|instagram|fbav|fb_iab|line|wechat|telegram/i.test(ua);
 }
@@ -21,7 +30,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const parsed = scanSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ status: "error", code: "invalid_input", message: "Invalid input" }, { status: 400 });
-    const { token, lat, lng, accuracy, mocked, deviceId } = parsed.data;
+    const { token, lat, lng, accuracy, mocked, deviceId, idempotencyKey } = parsed.data;
 
     if (!rateLimit(`scan:user:${deviceId}`, 20, 60_000) || !rateLimit(`scan:ip:${ip}`, 60, 60_000))
       return NextResponse.json({ status: "error", code: "rate_limited", message: "Too many attempts, try later" }, { status: 429 });
@@ -49,11 +58,38 @@ export async function POST(req: NextRequest) {
         device_id: deviceId, ip, metadata: { ...extra, mocked: !!mocked, accuracy: accuracy ?? null, ua: ua.slice(0, 200) }
       });
     }
-    if (!user) { return NextResponse.json({ status: "error", code: "unauthenticated", message: "Please log in first" }, { status: 401 }); }
+    if (!user) {
+      await flag(null, "unauthenticated", {});
+      return NextResponse.json({ status: "error", code: "unauthenticated", message: "Please log in first" }, { status: 401 });
+    }
     const { data: profile } = await svc.from("profiles").select("role,status").eq("id", user.id).single();
     if (!profile || profile.role !== "student" || profile.status !== "approved") {
       await flag(null, "not_approved_or_not_student", { role: profile?.role, status: profile?.status });
       return NextResponse.json({ status: "error", code: "not_eligible", message: "Account not approved as student" }, { status: 403 });
+    }
+
+    // 1b. authenticated rate limit (the pre-auth limit above is per device/IP).
+    if (!rateLimit(`scan:acct:${user.id}`, 20, 60_000)) {
+      return NextResponse.json({ status: "error", code: "rate_limited", message: "Too many attempts, try later" }, { status: 429 });
+    }
+
+    // Idempotent retry: same account + same client key returns the stored reply.
+    const idemKey = idempotencyKey ? `${user.id}:${idempotencyKey}` : null;
+    const remember = (body: any, status = 200) => {
+      if (idemKey) {
+        if (scanIdempotency.size > 500) {
+          for (const [k, entry] of scanIdempotency) {
+            if (Date.now() - entry.at > IDEMPOTENCY_TTL_MS) scanIdempotency.delete(k);
+          }
+        }
+        scanIdempotency.set(idemKey, { at: Date.now(), body, status });
+      }
+      return NextResponse.json(body, { status });
+    };
+    if (idemKey) {
+      const hit = scanIdempotency.get(idemKey);
+      if (hit && Date.now() - hit.at <= IDEMPOTENCY_TTL_MS) return NextResponse.json(hit.body, { status: hit.status });
+      if (hit) scanIdempotency.delete(idemKey);
     }
 
     // Decode sid without verifying to load secret (verify right after)
@@ -74,9 +110,16 @@ export async function POST(req: NextRequest) {
     try {
       v = await verifyQrToken(session.secret, token);
       if (v.sid !== session.id) throw new Error("sid_mismatch");
-    } catch {
-      await flag(session.id, "expired_or_invalid_token", {});
-      return NextResponse.json({ status: "error", code: "expired_code", message: "Code expired — scan the live QR again" }, { status: 400 });
+    } catch (e: any) {
+      // jose marks an otherwise-valid JWT that passed its exp claim with
+      // ERR_JWT_EXPIRED. That is the common race; a bad signature is not.
+      const expired = e?.code === "ERR_JWT_EXPIRED" || e?.name === "JWTExpired";
+      await flag(session.id, expired ? "token_expired" : "invalid_token", {});
+      return NextResponse.json({
+        status: "error",
+        code: expired ? "token_expired" : "bad_token",
+        message: expired ? "Code changed — scan the live QR again" : "Invalid class code"
+      }, { status: 400 });
     }
     const now = new Date();
     if (session.status === "paused") {
@@ -124,7 +167,7 @@ export async function POST(req: NextRequest) {
     // 4. duplicate (idempotent success)
     const { data: existing } = await svc.from("attendance_records").select("id,scanned_at").eq("session_id", session.id).eq("student_id", user.id).maybeSingle();
     if (existing) {
-      return NextResponse.json({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing.scanned_at });
+      return remember({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing.scanned_at });
     }
 
     // 5. device check (skippable by admin setting)
@@ -207,13 +250,13 @@ export async function POST(req: NextRequest) {
         // lost the race to a concurrent identical request — report the winner's real time
         const { data: existing } = await svc.from("attendance_records")
           .select("scanned_at").eq("session_id", session.id).eq("student_id", user.id).maybeSingle();
-        return NextResponse.json({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing?.scanned_at ?? new Date().toISOString() });
+        return remember({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing?.scanned_at ?? new Date().toISOString() });
       }
       throw insErr;
     }
-    await svc.from("audit_logs").insert({ actor_id: user.id, action: "scan_present", entity_type: "attendance_session", entity_id: session.id, metadata: { device: deviceId, ip, in_app_browser: inApp } });
+    await svc.from("audit_logs").insert({ actor_id: user.id, action: "scan_present", entity_type: "attendance_session", entity_id: session.id, metadata: { device: deviceId, ip, in_app_browser: inApp, idempotency_key: idempotencyKey ?? null } });
 
-    return NextResponse.json({ status: "success", code: mark === "late" ? "marked_late" : "marked", message: mark === "late" ? "Marked late" : "Marked present", course: (session as any).courses, time: rec.scanned_at, in_app_browser: inApp });
+    return remember({ status: "success", code: mark === "late" ? "marked_late" : "marked", message: mark === "late" ? "Marked late" : "Marked present", course: (session as any).courses, time: rec.scanned_at, in_app_browser: inApp });
   } catch (e: any) {
     return NextResponse.json({ status: "error", code: "server_error", message: "Server error, try again" }, { status: 500 });
   }

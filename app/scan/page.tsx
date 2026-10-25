@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useApp } from "@/components/providers";
@@ -7,13 +7,43 @@ import { Button } from "@/components/ui/button";
 import { getOrCreateDeviceId } from "@/lib/device";
 import { StampResult } from "@/components/hudoor/stamp-result";
 import { EmptyState } from "@/components/hudoor/empty-state";
+import { ManualCodeEntry } from "@/components/hudoor/manual-code-entry";
 import { CardSkeleton } from "@/components/hudoor/skeletons";
 import {
-  WifiOff, RefreshCw, ScanLine, ClipboardList,
+  WifiOff, RefreshCw, ScanLine, ClipboardList, Copy,
   MapPin, Smartphone, Clock, UserX, AlertTriangle, Shield, ExternalLink as LinkIcon
 } from "lucide-react";
 
 type Result = { status: string; code: string; message: string; course?: any; time?: string } | null;
+
+/**
+ * One key per token attempt. A reload or a retry of the same code reuses it,
+ * so the server can return the first confirmed result instead of inserting
+ * again. Cleared as soon as the server answers.
+ */
+function idempotencyFor(token: string): { storageKey: string; key: string } {
+  const storageKey = `hudoor_scan_idem:${token}`;
+  try {
+    const existing = sessionStorage.getItem(storageKey);
+    if (existing) return { storageKey, key: existing };
+    const fresh = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem(storageKey, fresh);
+    return { storageKey, key: fresh };
+  } catch {
+    return {
+      storageKey: "",
+      key: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    };
+  }
+}
+function clearIdempotency(storageKey: string) {
+  if (!storageKey) return;
+  try { sessionStorage.removeItem(storageKey); } catch {}
+}
 
 function isInAppBrowser(): boolean {
   const ua = navigator.userAgent;
@@ -28,8 +58,10 @@ function isSecureContext(): boolean {
 
 function codeCopy(t: any, code: string): { title: string; fix: string; icon: React.ReactNode } {
   switch (code) {
-    case "expired_code": case "bad_token":
+    case "expired_code": case "token_expired":
       return { title: t.err_expired, fix: t.err_expired_fix, icon: <Clock size={28} strokeWidth={2} /> };
+    case "bad_token": case "invalid_input":
+      return { title: t.err_invalid_code, fix: t.err_invalid_code_fix, icon: <AlertTriangle size={28} strokeWidth={2} /> };
     case "replay_code":
       return { title: t.err_reuse, fix: t.err_reuse_fix, icon: <Shield size={28} strokeWidth={2} /> };
     case "not_enrolled":
@@ -73,6 +105,11 @@ function ScanInner() {
   const token = sp.get("t");
   const [res, setRes] = useState<Result>(null);
   const [online, setOnline] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const doneRef = useRef(false);
+
+  useEffect(() => { doneRef.current = false; }, [token]);
 
   useEffect(() => {
     setOnline(navigator.onLine);
@@ -84,10 +121,11 @@ function ScanInner() {
   const inApp = isInAppBrowser();
 
   useEffect(() => {
-    if (!token || !navigator.onLine) return;
+    if (!token || !navigator.onLine || doneRef.current) return;
     let cancelled = false;
     (async () => {
       const deviceId = getOrCreateDeviceId();
+      const { storageKey, key } = idempotencyFor(token);
       let pos: any = {};
       try {
         pos = await new Promise((resolve) =>
@@ -97,19 +135,35 @@ function ScanInner() {
           )
         );
       } catch { pos = {}; }
-      try {
-        const r = await fetch("/api/attendance/scan", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, deviceId, ...pos })
-        });
-        const j = await r.json();
-        if (!cancelled) setRes(j);
-      } catch {
-        if (!cancelled) setRes({ status: "error", code: "offline", message: "offline" });
+
+      const body = JSON.stringify({ token, deviceId, idempotencyKey: key, ...pos });
+      // Bad network: retry twice with the SAME key. Success is only shown
+      // after the server confirms; otherwise the offline state is explicit.
+      for (let i = 0; i < 3; i++) {
+        try {
+          const r = await fetch("/api/attendance/scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body
+          });
+          const j = await r.json();
+          doneRef.current = true;
+          clearIdempotency(storageKey);
+          if (!cancelled) setRes(j);
+          return;
+        } catch {
+          if (cancelled) return;
+          if (i < 2 && navigator.onLine) {
+            await new Promise(resolve => setTimeout(resolve, 700 * (i + 1)));
+            continue;
+          }
+          if (!cancelled) setRes({ status: "error", code: "offline", message: "offline" });
+          return;
+        }
       }
     })();
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, attempt, online]);
 
   if (!online) {
     return (
@@ -133,7 +187,28 @@ function ScanInner() {
           title={t.err_in_app}
           hint={t.err_in_app_fix}
           withGrid
-          action={<Button onClick={() => location.reload()}><LinkIcon size={18} strokeWidth={2} /> {t.openInBrowser}</Button>}
+          action={
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                disabled={copied}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(location.href);
+                    setCopied(true);
+                  } catch {
+                    // Clipboard may be blocked inside a webview; the text
+                    // remains selectable in the address bar.
+                  }
+                }}
+              >
+                <Copy size={18} strokeWidth={2} /> {copied ? t.copied : t.copyLink}
+              </Button>
+              <Button className="w-full" variant="outline" onClick={() => location.reload()}>
+                <LinkIcon size={18} strokeWidth={2} /> {t.openInBrowser}
+              </Button>
+            </div>
+          }
         />
       </main>
     );
@@ -162,8 +237,11 @@ function ScanInner() {
           title={t.scanToAttend}
           hint={t.scanHint}
           withGrid
-          action={<Link href="/student/scan-in-app" className="block"><Button className="w-full">{t.openScanner}</Button></Link>}
+          action={<Link href="/student/scan-in-app" className="block"><Button className="min-h-[44px] w-full">{t.openScanner}</Button></Link>}
         />
+        <div className="mt-6 rounded-card border border-border bg-card p-4">
+          <ManualCodeEntry />
+        </div>
       </main>
     );
   }
@@ -234,7 +312,7 @@ function ScanInner() {
                 <Button className="w-full">{t.goLogin}</Button>
               </Link>
             )}
-            <Button className="w-full" onClick={() => location.reload()}>
+            <Button className="w-full" onClick={() => { doneRef.current = false; setRes(null); setAttempt(a => a + 1); }}>
               <RefreshCw size={18} strokeWidth={2} /> {t.retry}
             </Button>
             <Link href="/student/scan-in-app" className="block">
@@ -243,6 +321,9 @@ function ScanInner() {
           </div>
         }
       />
+      <div className="mt-6 rounded-card border border-border bg-card p-4">
+        <ManualCodeEntry />
+      </div>
     </main>
   );
 }
