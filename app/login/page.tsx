@@ -64,6 +64,19 @@ function LoginInner() {
       if (insErr) { setErr(insErr.message); return; }
       p = { role: fallback, status: "pending" } as any;
     }
+
+    // Signup consent is captured in auth metadata before the session exists
+    // (email-confirmation flow). Copy it into the consent ledger once, if the
+    // table from migration 014 is present; never block login on this.
+    const consentVersion = (user!.user_metadata as any)?.consent_version;
+    if (typeof consentVersion === "string" && consentVersion) {
+      try {
+        await sb.from("consents").upsert([
+          { user_id: user!.id, kind: "privacy", version: consentVersion },
+          { user_id: user!.id, kind: "terms", version: consentVersion }
+        ], { onConflict: "user_id,kind,version", ignoreDuplicates: true });
+      } catch {}
+    }
     // Role-aware landing: `next` is honored only when this role may open it,
     // otherwise middleware would bounce us straight back here (ping-pong).
     r.push(landingFor((p as any)?.role, next));

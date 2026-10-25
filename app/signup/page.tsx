@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { browserSupabase } from "@/lib/supabase";
 import { useApp, Controls } from "@/components/providers";
 import { Button, Input, Label, FieldError } from "@/components/ui";
+import { LEGAL_VERSION } from "@/lib/legal";
 import { GraduationCap, Presentation, MailCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +18,7 @@ export default function Signup() {
   const [busy, setBusy] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [needConfirm, setNeedConfirm] = useState(false);
+  const [agree, setAgree] = useState(false);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -24,11 +27,19 @@ export default function Signup() {
   }, [cooldown]);
 
   async function go(e: React.FormEvent) {
-    e.preventDefault(); setErr(""); setRateLimited(false); setBusy(true);
+    e.preventDefault(); setErr(""); setRateLimited(false);
+    if (!agree) { setErr(t.consentRequired); return; }
+    setBusy(true);
     try {
       const sb = browserSupabase();
       const { data, error } = await sb.auth.signUp({
-        email, password, options: { data: { role } }
+        email, password, options: {
+          data: {
+            role,
+            consent_version: LEGAL_VERSION,
+            consent_at: new Date().toISOString()
+          }
+        }
       });
       if (error) {
         if (/rate limit/i.test(error.message)) { setRateLimited(true); setCooldown(60); }
@@ -41,6 +52,14 @@ export default function Signup() {
       if (!sess.session) { setNeedConfirm(true); return; }
       const { error: e2 } = await sb.from("profiles").insert({ id: data.user.id, email, role, status: "pending" });
       if (e2) { setErr(e2.message); return; }
+      // Consent ledger (migration 014). If it is not applied yet, the signup
+      // still succeeds; consent_version remains on the auth user as a fallback.
+      try {
+        await sb.from("consents").upsert([
+          { user_id: data.user.id, kind: "privacy", version: LEGAL_VERSION },
+          { user_id: data.user.id, kind: "terms", version: LEGAL_VERSION }
+        ], { onConflict: "user_id,kind,version", ignoreDuplicates: true });
+      } catch {}
       r.push(role === "professor" ? "/professor-request?done=1" : "/onboarding");
     } finally { setBusy(false); }
   }
@@ -92,6 +111,25 @@ export default function Signup() {
             <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-200">{t.err_rate_auth_fix}</p>
           </div>
         )}
+        <div>
+          <label className="flex min-h-[44px] items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={e => setAgree(e.target.checked)}
+              className="mt-1 h-5 w-5 shrink-0 accent-[var(--primary)]"
+            />
+            <span className="text-sm font-medium leading-relaxed">{t.consentAgree}</span>
+          </label>
+          <div className="ms-7 flex flex-wrap gap-x-4">
+            <Link href="/privacy" target="_blank" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-register underline underline-offset-4">
+              {t.mePrivacyPolicy}
+            </Link>
+            <Link href="/terms" target="_blank" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-register underline underline-offset-4">
+              {t.meTerms}
+            </Link>
+          </div>
+        </div>
         <FieldError msg={err} />
         <Button className="w-full !min-h-[56px] !text-lg" disabled={busy || cooldown > 0}>
           {cooldown > 0 ? `${t.tryAgainIn} ${cooldown}` : t.signup}
