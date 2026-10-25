@@ -161,3 +161,30 @@ Critical known limitations (will not fully solve here):
 
 Known limitations documented in README and SECURITY.md (to be created).
 Recommended next steps: PDF import phase, China program timetable, WebAuthn + 2FA, anti-relay signals, RLS test suite, load testing, consent/privacy pages.
+
+---
+
+## Update — Sun Oct 25 2026 (hardening follow-up, commit 41028bf+)
+
+Resolution of previous findings + this round's 7-item checklist:
+
+**Fixed findings**
+- S3 was stale: QR tokens `crypto-hmac`-signed already (jose HS256, `lib/qr-token.ts`).
+- S8: `/api/cron/sessions` now authenticated (`CRON_SECRET` bearer, or signed-in lazy tick as fallback) and does real work: closes ended sessions, marks enrolled no-shows `absent` (`method='auto'`, `ON CONFLICT`-guarded; idempotent under concurrency). Migration 012 applied live.
+- Bulk attendance edits/unmarks now record per-row before-state in `audit_logs` (real diffs, not just the target status).
+- Reports export rewritten: auth + role/course scoping, server-side filters, chunked pagination (previously leaked out-of-scope rows to staff).
+
+**New hardening (applied live via Supabase API)**
+- 011 `qr_nonce_ledger`: `qr_scans` table, unique (session, nonce, student); replay of an old captured code → `replay_code` + `qr_nonce_reuse` flag; concurrent double-tap stays idempotent. Applied live 2026-10-25.
+- 012 `auto_absent`: `method` check widened to include `'auto'`; global `auto_absent` setting seeded (`true`); admin toggle in Settings → Attendance.
+- 013 `qr_scans_retention`: pg_cron job `prune-qr-scans` (daily 03:00 UTC) pruning the ledger past 30 days via SECURITY DEFINER function.
+
+**Camera regression root-cause** (the "worked in an older commit" report): scanning never regressed in scanner code — commit d7448f4's CSP blocked the barcode engine's runtime WASM download (fastly.jsdelivr.net not in `connect-src`) and lacked `wasm-unsafe-eval`. Fixed by serving the WASM same-origin (`public/zxing_reader.wasm`) via `setZXingModuleOverrides` (`lib/scanner-wasm.ts`) and adding `'wasm-unsafe-eval'`.
+- Camera-denied misclassification fixed: error kind-based triage (`aborted`/`in-use`/`permission-denied`), Permissions-API confirmation before the "denied" screen, in-use auto-retry ×5 @1s.
+
+**Tests**: 63 passing (`tests/hardening.test.mjs` added: QR sign/verify/expiry/tamper, rotation clamping, replay rule, duplicate-race unique-contract semantics, haversine, IP allowlist, rate limiter, request schemas). `tsc --noEmit` clean.
+
+**Remaining for item 7 (ops)**
+- `CRON_SECRET` must be set in Vercel env (else the endpoint falls back to signed-in lazy tick).
+- Optional Vercel cron entry for the sessions endpoint (currently lazy-tick works).
+- Backup scripts + Sentry/monitoring + staging still open (documented in RUNBOOK gap list).
