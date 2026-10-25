@@ -47,6 +47,8 @@ describe("onboarding schema messages", () => {
     for (const { message } of issues) assert.doesNotMatch(message, /^required$/i);
     assert.match(issues.find((i) => i.path === "program_id").message, /البرنامج/);
     assert.match(issues.find((i) => i.path === "phone").message, /جوال/);
+    assert.match(issues.find((i) => i.path === "full_name_en").message, /English/);
+    assert.match(issues.find((i) => i.path === "full_name_ar").message, /العربية/);
   });
 
   it("accepts a complete profile", () => {

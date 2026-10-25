@@ -35,9 +35,9 @@ import { CommandPalette, CommandPaletteTrigger, usePalette } from "@/components/
 import {
   LazyCountUp,
   LazyBlurText,
-  LazyAnimatedList,
-  LazyStepper
+  LazyAnimatedList
 } from "@/components/hudoor/bits";
+import { LazyStepper } from "@/components/hudoor/stepper";
 
 /* /design — dev-only reference page. Every token and every component in
    every state, in the current theme and direction (toggle with the Controls).

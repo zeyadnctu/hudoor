@@ -9,7 +9,8 @@ import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LazyStepper, LazyBlurText } from "@/components/hudoor/bits";
+import { LazyBlurText } from "@/components/hudoor/bits";
+import { LazyStepper } from "@/components/hudoor/stepper";
 import { EmptyState } from "@/components/hudoor/empty-state";
 import { School, Loader2, AlertCircle } from "lucide-react";
 
@@ -73,9 +74,10 @@ export default function Onboarding() {
   const [gateMsg, setGateMsg] = useState(false);
   const { register, handleSubmit, watch, trigger, setFocus, getFieldState, formState: { errors } } = useForm({
     resolver: zodResolver(onboardingSchema) as any,
-    // onTouched + onChange re-validation: the red message disappears the moment
-    // the user fixes that field (default onSubmit mode left stale errors up).
-    mode: "onTouched",
+    // onChange re-validation: the red message disappears the moment the user
+    // fixes that field. onTouched + trigger() left errors stuck, because
+    // trigger() does not mark a field touched, so change never re-validated.
+    mode: "onChange",
     reValidateMode: "onChange",
     // Untouched text inputs start as "" (not undefined) so validation always
     // returns a field-specific message, never zod's raw "Required".
@@ -96,6 +98,9 @@ export default function Onboarding() {
   }, [JSON.stringify(values)]);
 
   // Dismiss the gate banner as soon as this step's fields are all valid.
+  // Keyed on a stable signature: RHF can reuse the same errors object, so a
+  // plain `errors` dependency may never re-run this effect.
+  const errSig = Object.keys(errors).sort().join("|");
   useEffect(() => {
     if (!gateMsg) return;
     const fields = step === 0
@@ -105,7 +110,7 @@ export default function Onboarding() {
         : ["program_id", "level_id", "section_id"];
     if (fields.every(f => !(errors as any)[f])) setGateMsg(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [errors, gateMsg, step]);
+  }, [errSig, gateMsg, step]);
 
   useEffect(() => {
     (async () => {

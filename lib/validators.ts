@@ -6,7 +6,9 @@ export const scanSchema = z.object({
   lng: z.number().min(-180).max(180).optional(),
   accuracy: z.number().min(0).max(100000).optional(),
   mocked: z.boolean().optional(),
-  deviceId: z.string().min(8).max(128)
+  deviceId: z.string().min(8).max(128),
+  /** Stable key for one logical attempt; retries reuse it. */
+  idempotencyKey: z.string().min(8).max(100).optional()
 });
 
 export const sessionCreateSchema = z.object({
@@ -26,11 +28,11 @@ export const onboardingSchema = z.object({
   full_name_ar: z.string({
     required_error: "اكتب اسمك الأول بالعربية / enter your Arabic name",
     invalid_type_error: "اكتب اسمك الأول بالعربية / enter your Arabic name"
-  }).trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  }).trim().min(2, { message: "اكتب اسمك الأول بالعربية (حرفان على الأقل) / enter your Arabic name (at least 2 characters)" }),
   full_name_en: z.string({
     required_error: "اكتب اسمك بالإنجليزية / enter your English name",
     invalid_type_error: "اكتب اسمك بالإنجليزية / enter your English name"
-  }).trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  }).trim().min(2, { message: "اكتب اسمك بالإنجليزية (حرفان على الأقل) / enter your English name (at least 2 characters)" }),
   university_id: z.string({
     required_error: "أدخل رقمك الجامعي / enter your university ID",
     invalid_type_error: "أدخل رقمك الجامعي / enter your university ID"
