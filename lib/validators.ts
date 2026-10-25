@@ -19,15 +19,40 @@ export const sessionCreateSchema = z.object({
 });
 
 export const onboardingSchema = z.object({
-  full_name_ar: z.string().trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
-  full_name_en: z.string().trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
-  university_id: z.string().trim().min(2, { message: "أدخل رقمك الجامعي / enter your university ID" }).max(32),
-  program_id: z.string().uuid({ message: "اختر البرنامج / pick a program" }),
-  level_id: z.string().uuid({ message: "اختر المستوى / pick a level" }),
-  section_id: z.string().uuid({ message: "اختر المجموعة / pick a group" }),
+  // required_error / invalid_type_error matter: RHF fields the user never
+  // touched are `undefined`, and a bare z.string() would then emit zod's raw
+  // "Required" even though the user did fill the OTHER name field. Every field
+  // now always answers with a bilingual, field-specific message.
+  full_name_ar: z.string({
+    required_error: "اكتب اسمك الأول بالعربية / enter your Arabic name",
+    invalid_type_error: "اكتب اسمك الأول بالعربية / enter your Arabic name"
+  }).trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  full_name_en: z.string({
+    required_error: "اكتب اسمك بالإنجليزية / enter your English name",
+    invalid_type_error: "اكتب اسمك بالإنجليزية / enter your English name"
+  }).trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  university_id: z.string({
+    required_error: "أدخل رقمك الجامعي / enter your university ID",
+    invalid_type_error: "أدخل رقمك الجامعي / enter your university ID"
+  }).trim().min(2, { message: "أدخل رقمك الجامعي / enter your university ID" }).max(32, { message: "الرقم الجامعي طويل جدًا / university ID is too long" }),
+  program_id: z.string({
+    required_error: "اختر البرنامج / pick a program",
+    invalid_type_error: "اختر البرنامج / pick a program"
+  }).uuid({ message: "اختر البرنامج / pick a program" }),
+  level_id: z.string({
+    required_error: "اختر المستوى / pick a level",
+    invalid_type_error: "اختر المستوى / pick a level"
+  }).uuid({ message: "اختر المستوى / pick a level" }),
+  section_id: z.string({
+    required_error: "اختر المجموعة / pick a group",
+    invalid_type_error: "اختر المجموعة / pick a group"
+  }).uuid({ message: "اختر المجموعة / pick a group" }),
   level_year: z.number().int().min(1).max(12).optional(),
   section_group: z.string().min(1).max(32).optional(),
-  phone: z.string().trim().min(5, { message: "رقم غير صالح / invalid phone number" }).max(24)
+  phone: z.string({
+    required_error: "أدخل رقم الجوال / enter your phone number",
+    invalid_type_error: "أدخل رقم الجوال / enter your phone number"
+  }).trim().min(5, { message: "أدخل رقم جوال صحيح (5 أرقام على الأقل) / enter a valid phone number" }).max(24, { message: "رقم الجوال طويل جدًا / phone number is too long" })
 });
 
 export const manualMarkSchema = z.object({

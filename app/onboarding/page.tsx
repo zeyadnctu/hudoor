@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LazyStepper, LazyBlurText } from "@/components/hudoor/bits";
 import { EmptyState } from "@/components/hudoor/empty-state";
-import { School, Loader2 } from "lucide-react";
+import { School, Loader2, AlertCircle } from "lucide-react";
 
 const DRAFT_KEY = "hudoor_onboarding_draft";
 
@@ -68,9 +68,22 @@ export default function Onboarding() {
   const [done, setDone] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
-  const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm({
+  // Shown when "next/save" is blocked by validation: says WHY nothing happened
+  // and points at the highlighted field instead of silently ignoring the tap.
+  const [gateMsg, setGateMsg] = useState(false);
+  const { register, handleSubmit, watch, trigger, setFocus, getFieldState, formState: { errors } } = useForm({
     resolver: zodResolver(onboardingSchema) as any,
-    defaultValues: (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { return {}; } })()
+    // onTouched + onChange re-validation: the red message disappears the moment
+    // the user fixes that field (default onSubmit mode left stale errors up).
+    mode: "onTouched",
+    reValidateMode: "onChange",
+    // Untouched text inputs start as "" (not undefined) so validation always
+    // returns a field-specific message, never zod's raw "Required".
+    defaultValues: {
+      full_name_ar: "", full_name_en: "", university_id: "", phone: "",
+      program_id: "", level_id: "", section_id: "",
+      ...(() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { return {}; } })()
+    }
   });
   const values = watch();
   const progId = values.program_id as string | undefined;
@@ -81,6 +94,18 @@ export default function Onboarding() {
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(values)); } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(values)]);
+
+  // Dismiss the gate banner as soon as this step's fields are all valid.
+  useEffect(() => {
+    if (!gateMsg) return;
+    const fields = step === 0
+      ? ["full_name_ar", "full_name_en"]
+      : step === 1
+        ? ["university_id", "phone"]
+        : ["program_id", "level_id", "section_id"];
+    if (fields.every(f => !(errors as any)[f])) setGateMsg(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [errors, gateMsg, step]);
 
   useEffect(() => {
     (async () => {
@@ -149,21 +174,31 @@ export default function Onboarding() {
     })();
   }, [levelId]);
 
-  /* gate: only advance a step when its fields validate */
+  /* Gate: only advance / submit when the step's fields are valid. On failure
+     we surface a clear banner and jump focus to the first offending input, so
+     "the button does nothing" can never happen silently. */
+  async function gate(fields: string[]): Promise<boolean> {
+    const ok = await trigger(fields as any);
+    if (ok) { setGateMsg(false); return true; }
+    setGateMsg(true);
+    const first = fields.find(f => getFieldState(f as any).error);
+    if (first) { try { setFocus(first as any); } catch {} }
+    return false;
+  }
+
   async function handleStepChange(next: number) {
     if (next > step) {
       const fields = step === 0
         ? ["full_name_ar", "full_name_en"]
         : ["university_id", "phone"];
-      const ok = await trigger(fields as any);
-      if (!ok) return;
+      if (!(await gate(fields))) return;
     }
+    setGateMsg(false);
     setStep(next);
   }
 
   async function submit(v: any) {
-    const ok = await trigger(["program_id", "level_id", "section_id"] as any);
-    if (!ok) return;
+    if (!(await gate(["program_id", "level_id", "section_id"]))) return;
     setFormError(""); setSaving(true);
     try {
       const sb = browserSupabase();
@@ -239,7 +274,7 @@ export default function Onboarding() {
   }
 
   // surface the actual schema message (bilingual) instead of a bare "required"
-  const errText = (e: any) => (e ? e.message ?? "مطلوب / required" : undefined);
+  const errText = (e: any) => (e ? e.message ?? "أكمل هذا الحقل / complete this field" : undefined);
 
   return (
     <main className="dot-grid mx-auto w-full max-w-md px-4 py-8">
@@ -247,6 +282,17 @@ export default function Onboarding() {
         <LazyBlurText text={t.completeProfile} />
       </h1>
       <p className="mt-1 text-muted-foreground">{t.askOnlyNeeded}</p>
+
+      {gateMsg && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="mt-4 flex items-start gap-2 rounded-base border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+        >
+          <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{String(t.fillHighlighted ?? "")}</span>
+        </div>
+      )}
 
       {formError && (
         <p role="alert" className="mt-4 rounded-base bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
@@ -267,13 +313,13 @@ export default function Onboarding() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="full_name_ar">{t.fullNameAr}</Label>
-                    <Input id="full_name_ar" {...register("full_name_ar")} autoComplete="name" aria-invalid={!!errors.full_name_ar} />
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_ar)}</p>
+                    <Input id="full_name_ar" {...register("full_name_ar")} autoComplete="name" aria-invalid={!!errors.full_name_ar} aria-describedby={errors.full_name_ar ? "err_full_name_ar" : undefined} />
+                    {errors.full_name_ar && <p id="err_full_name_ar" className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_ar)}</p>}
                   </div>
                   <div>
                     <Label htmlFor="full_name_en">{t.fullNameEn}</Label>
-                    <Input id="full_name_en" {...register("full_name_en")} autoComplete="name" dir="ltr" aria-invalid={!!errors.full_name_en} />
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_en)}</p>
+                    <Input id="full_name_en" {...register("full_name_en")} autoComplete="name" dir="ltr" aria-invalid={!!errors.full_name_en} aria-describedby={errors.full_name_en ? "err_full_name_en" : undefined} />
+                    {errors.full_name_en && <p id="err_full_name_en" className="mt-1 text-sm font-medium text-destructive">{errText(errors.full_name_en)}</p>}
                   </div>
                 </div>
               )
@@ -284,13 +330,13 @@ export default function Onboarding() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="university_id">{t.universityId}</Label>
-                    <Input id="university_id" {...register("university_id")} inputMode="numeric" dir="ltr" aria-invalid={!!errors.university_id} />
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.university_id)}</p>
+                    <Input id="university_id" {...register("university_id")} inputMode="numeric" dir="ltr" aria-invalid={!!errors.university_id} aria-describedby={errors.university_id ? "err_university_id" : undefined} />
+                    {errors.university_id && <p id="err_university_id" className="mt-1 text-sm font-medium text-destructive">{errText(errors.university_id)}</p>}
                   </div>
                   <div>
                     <Label htmlFor="phone">{t.phone}</Label>
-                    <Input id="phone" {...register("phone")} type="tel" autoComplete="tel" dir="ltr" aria-invalid={!!errors.phone} />
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.phone)}</p>
+                    <Input id="phone" {...register("phone")} type="tel" autoComplete="tel" dir="ltr" aria-invalid={!!errors.phone} aria-describedby={errors.phone ? "err_phone" : undefined} />
+                    {errors.phone && <p id="err_phone" className="mt-1 text-sm font-medium text-destructive">{errText(errors.phone)}</p>}
                   </div>
                 </div>
               )
@@ -301,27 +347,27 @@ export default function Onboarding() {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="program_id">{t.programs}</Label>
-                    <select id="program_id" {...register("program_id")} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm">
+                    <select id="program_id" {...register("program_id")} aria-invalid={!!errors.program_id} aria-describedby={errors.program_id ? "err_program_id" : undefined} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20">
                       <option value="">—</option>
                       {progs.map(p => <option key={p.id} value={p.id}>{p.type === "partner" ? "★ " : ""}{p.code} · {p.name_ar}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.program_id)}</p>
+                    {errors.program_id && <p id="err_program_id" className="mt-1 text-sm font-medium text-destructive">{errText(errors.program_id)}</p>}
                   </div>
                   <div>
                     <Label htmlFor="level_id">{t.level}</Label>
-                    <select id="level_id" {...register("level_id")} disabled={!progId} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                    <select id="level_id" {...register("level_id")} disabled={!progId} aria-invalid={!!errors.level_id} aria-describedby={errors.level_id ? "err_level_id" : undefined} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:opacity-50">
                       <option value="">—</option>
                       {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar} / {l.name_en}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.level_id)}</p>
+                    {errors.level_id && <p id="err_level_id" className="mt-1 text-sm font-medium text-destructive">{errText(errors.level_id)}</p>}
                   </div>
                   <div>
                     <Label htmlFor="section_id">{t.group}</Label>
-                    <select id="section_id" {...register("section_id")} disabled={!levelId} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm disabled:opacity-50">
+                    <select id="section_id" {...register("section_id")} disabled={!levelId} aria-invalid={!!errors.section_id} aria-describedby={errors.section_id ? "err_section_id" : undefined} className="mt-1 flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:opacity-50">
                       <option value="">—</option>
                       {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.section_id)}</p>
+                    {errors.section_id && <p id="err_section_id" className="mt-1 text-sm font-medium text-destructive">{errText(errors.section_id)}</p>}
                   </div>
                 </div>
               )
