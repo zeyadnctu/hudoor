@@ -178,8 +178,8 @@ export default function InAppScan() {
       <main className="mx-auto w-full max-w-md px-4 py-10">
         <EmptyState
           icon={<CameraOff size={28} />}
-          title={t.err_camera_denied}
-          hint={t.err_camera_denied_fix}
+          title={(t as any).err_camera_denied || t.err_camera}
+          hint={(t as any).err_camera_denied_fix || (t as any).err_camera_fix}
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
@@ -192,8 +192,8 @@ export default function InAppScan() {
       <main className="mx-auto w-full max-w-md px-4 py-10">
         <EmptyState
           icon={<Camera size={28} />}
-          title={t.err_camera_busy}
-          hint={t.err_camera_busy_fix}
+          title={(t as any).err_camera_busy || t.err_camera}
+          hint={(t as any).err_camera_busy_fix || (t as any).err_camera_fix}
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
@@ -206,8 +206,8 @@ export default function InAppScan() {
       <main className="mx-auto w-full max-w-md px-4 py-10">
         <EmptyState
           icon={<CameraOff size={28} />}
-          title={t.err_no_camera}
-          hint={t.err_no_camera_fix}
+          title={(t as any).err_no_camera || t.err_camera}
+          hint={(t as any).err_no_camera_fix || (t as any).err_camera_fix}
           withGrid
           action={<Button onClick={() => r.push("/student")}>{t.back}</Button>}
         />
@@ -220,8 +220,8 @@ export default function InAppScan() {
       <main className="mx-auto w-full max-w-md px-4 py-10">
         <EmptyState
           icon={<CameraOff size={28} />}
-          title={t.err_camera_generic}
-          hint={errMsg || t.err_camera_generic_fix}
+          title={(t as any).err_camera_generic || t.err_camera}
+          hint={errMsg || (t as any).err_camera_generic_fix || (t as any).err_camera_fix}
           withGrid
           action={<Button onClick={retry}><RefreshCw size={18} strokeWidth={2} /> {t.retry}</Button>}
         />
