@@ -166,9 +166,9 @@ export function LazyStepper({
   }
   return (
     <StepperRaw
-      step={step}
-      onStepChange={onStepChange}
-      onFinalStepCompleted={onCompleted}
+      step={step + 1}
+      onStepChange={(s) => onStepChange(s - 1)}
+  onFinalStepCompleted={onCompleted}
       indicator="bars"
       transition="slide"
       linear
