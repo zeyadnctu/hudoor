@@ -110,15 +110,31 @@ export async function POST(req: NextRequest) {
   }
   if (record_ids?.length && status) {
     if (!["present", "late", "absent", "excused"].includes(status)) return NextResponse.json({ error: "bad_status" }, { status: 400 });
+    // capture per-row before-state so the audit trail shows a real diff,
+    // not just the requested target status
+    const { data: beforeRows } = await svc.from("attendance_records")
+      .select("id,status,method,student_id,session_id,scanned_at").in("id", record_ids);
+    const before = ((beforeRows ?? []) as any[]).map(r => ({
+      id: r.id, student_id: r.student_id, session_id: r.session_id,
+      status: r.status, method: r.method, scanned_at: r.scanned_at
+    }));
     const { error } = await svc.from("attendance_records").update({ status }).in("id", record_ids);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    await auditDiff(svc, gate.ctx.profile.id, "attendance.bulk_edit", "attendance_records", record_ids.join(","), null, { status, count: record_ids.length }, { reason }, gate.ctx);
+    const after = ((beforeRows ?? []) as any[]).map(r => ({ id: r.id, status }));
+    await auditDiff(svc, gate.ctx.profile.id, "attendance.bulk_edit", "attendance_records", record_ids.join(","), before, after, { reason, count: record_ids.length }, gate.ctx);
     return NextResponse.json({ ok: true, updated: record_ids.length });
   }
   if (record_ids?.length && body.unmark) {
+    // keep the deleted rows in the audit trail (who/what/when/why)
+    const { data: beforeRows } = await svc.from("attendance_records")
+      .select("id,status,method,student_id,session_id,scanned_at").in("id", record_ids);
+    const before = ((beforeRows ?? []) as any[]).map(r => ({
+      id: r.id, student_id: r.student_id, session_id: r.session_id,
+      status: r.status, method: r.method, scanned_at: r.scanned_at
+    }));
     const { error } = await svc.from("attendance_records").delete().in("id", record_ids);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    await auditDiff(svc, gate.ctx.profile.id, "attendance.bulk_unmark", "attendance_records", record_ids.join(","), { ids: record_ids }, null, { reason }, gate.ctx);
+    await auditDiff(svc, gate.ctx.profile.id, "attendance.bulk_unmark", "attendance_records", record_ids.join(","), before, null, { reason, count: record_ids.length }, gate.ctx);
     return NextResponse.json({ ok: true, removed: record_ids.length });
   }
   return NextResponse.json({ error: "invalid" }, { status: 400 });

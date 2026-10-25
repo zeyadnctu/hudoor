@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scanner, type IScannerError } from "@yudiel/react-qr-scanner";
+import "@/lib/scanner-wasm";
 import { useApp } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { PermissionPrimer } from "@/components/hudoor/permission-primer";
@@ -137,11 +138,12 @@ export default function InAppScan() {
     }
 
     if (kind === "in-use") {
-      // Camera temporarily held elsewhere — auto-retry a few times, then
-      // offer a manual retry with a clear hint.
-      if (busyRetries.current < 3) {
+      // Camera temporarily held elsewhere (another tab/app, a releasing
+      // stream) — auto-retry with a longer backoff; each retry remounts the
+      // Scanner after the previous instance has had time to release the cam.
+      if (busyRetries.current < 5) {
         busyRetries.current += 1;
-        setTimeout(() => setScanKey((k) => k + 1), 700);
+        setTimeout(() => setScanKey((k) => k + 1), 1000);
       } else {
         setPhase("busy");
       }

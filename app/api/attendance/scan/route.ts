@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { serverSupabase, serviceSupabase } from "@/lib/supabase-server";
 import { scanSchema } from "@/lib/validators";
-import { verifyQrToken } from "@/lib/qr-token";
+import { verifyQrToken, isNonceReplay } from "@/lib/qr-token";
 import { haversineM, clientIp, ipAllowed } from "@/lib/geo";
 import { rateLimit } from "@/lib/rate-limit";
 import { effective, asNum, asBool } from "@/lib/settings";
@@ -56,8 +56,9 @@ export async function POST(req: NextRequest) {
     if (!session) { await flag(null, "unknown_session", {}); return NextResponse.json({ status: "error", code: "bad_token", message: "Unknown session" }, { status: 400 }); }
 
     // 2. verify signature + expiry + active (server time)
+    let v: { sid: string; nonce: string } | null = null;
     try {
-      const v = await verifyQrToken(session.secret, token);
+      v = await verifyQrToken(session.secret, token);
       if (v.sid !== session.id) throw new Error("sid_mismatch");
     } catch {
       await flag(session.id, "expired_or_invalid_token", {});
@@ -161,13 +162,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 7. insert + audit (unique constraint guards races)
+    // 7. QR nonce single-use ledger + insert + audit (unique constraints guard races).
+    // One student may consume a given rotating code exactly once: this blocks
+    // re-marking from a captured screenshot after a professor unmarks them.
+    // A double-tap race (concurrent claim seconds old) stays idempotent —
+    // only a claim left over from an earlier use is treated as replay.
+    const { error: nonceErr } = await svc.from("qr_scans").insert({
+      session_id: session.id, student_id: user.id, nonce: v.nonce, device_id: deviceId
+    });
+    if (nonceErr && nonceErr.code === "23505") {
+      const { data: claim } = await svc.from("qr_scans")
+        .select("created_at").eq("session_id", session.id)
+        .eq("student_id", user.id).eq("nonce", v.nonce).single();
+      const ageMs = claim ? Date.now() - new Date(claim.created_at).getTime() : Infinity;
+      if (isNonceReplay(ageMs)) {
+        await flag(session.id, "qr_nonce_reuse", { nonce_age_s: Math.round(ageMs / 1000) });
+        return NextResponse.json({ status: "error", code: "replay_code", message: "Code already used — scan the live QR" }, { status: 400 });
+      }
+      // fall through: the attendance unique constraint keeps exactly one record
+    } else if (nonceErr) {
+      // ledger outage must not block attendance — flag and continue
+      await flag(session.id, "qr_ledger_error", { msg: nonceErr.message });
+    }
+
     const { data: rec, error: insErr } = await svc.from("attendance_records")
       .insert({ session_id: session.id, student_id: user.id, method: "scan", status: mark })
       .select().single();
     if (insErr) {
       if (insErr.code === "23505") {
-        return NextResponse.json({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: new Date().toISOString() });
+        // lost the race to a concurrent identical request — report the winner's real time
+        const { data: existing } = await svc.from("attendance_records")
+          .select("scanned_at").eq("session_id", session.id).eq("student_id", user.id).maybeSingle();
+        return NextResponse.json({ status: "success", code: "already_marked", message: "Already marked present", course: (session as any).courses, time: existing?.scanned_at ?? new Date().toISOString() });
       }
       throw insErr;
     }

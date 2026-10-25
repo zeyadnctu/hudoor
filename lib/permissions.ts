@@ -42,6 +42,7 @@ const SYSTEM_MATRIX: Record<string, Grant[]> = {
   ta: [
     { resource: "attendance", action: "view" },
     { resource: "attendance", action: "edit" },
+    { resource: "attendance", action: "export" },
     { resource: "sessions", action: "view" },
     { resource: "enrollments", action: "view" },
     { resource: "announcements", action: "view" }

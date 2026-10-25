@@ -30,6 +30,8 @@ function codeCopy(t: any, code: string): { title: string; fix: string; icon: Rea
   switch (code) {
     case "expired_code": case "bad_token":
       return { title: t.err_expired, fix: t.err_expired_fix, icon: <Clock size={28} strokeWidth={2} /> };
+    case "replay_code":
+      return { title: t.err_reuse, fix: t.err_reuse_fix, icon: <Shield size={28} strokeWidth={2} /> };
     case "not_enrolled":
       return { title: t.err_enrolled, fix: t.err_enrolled_fix, icon: <UserX size={28} strokeWidth={2} /> };
     case "wrong_device":

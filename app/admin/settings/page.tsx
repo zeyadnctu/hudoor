@@ -16,6 +16,7 @@ const GROUPS: { title: string; specs: SettingSpec[] }[] = [
       { key: "grace_period_min", label: "Grace (min)", type: "number", min: 0, max: 60 },
       { key: "min_pct_per_course", label: "Minimum %", type: "number", min: 0, max: 100 },
       { key: "auto_end_sessions", label: "Auto-end sessions", type: "boolean" },
+      { key: "auto_absent", label: "Auto-mark absent", type: "boolean", hint: "mark no-shows absent when a session ends" },
       { key: "allow_late_scanning", label: "Allow late scanning", type: "boolean" }
     ]
   },

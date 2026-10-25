@@ -16,6 +16,17 @@ async function loadGrants(svc: Ctx["svc"], customRole: string | null): Promise<G
   return (data ?? []) as Grant[];
 }
 
+/**
+ * Pure students are row-scoped inside the routes themselves (every console
+ * route filters `student_id = profile.id` for them), so course ownership is
+ * irrelevant — they must not be asked for a course_id they can never own
+ * (that 403'd their excuse/dispute flows). TAs are NOT row-scoped (the routes
+ * deliberately exempt custom_role "ta"), so they keep the course gate.
+ */
+function isRowScoped(p: { role: string; custom_role?: string | null }): boolean {
+  return p.role === "student" && p.custom_role !== "ta";
+}
+
 async function courseScope(svc: Ctx["svc"], userId: string) {
   const [cp, tas] = await Promise.all([
     svc.from("course_professors").select("course_id").eq("professor_id", userId),
@@ -82,7 +93,7 @@ export async function requirePerm(
   const extra = await loadGrants(svc, p.custom_role);
   if (!can(p as any, resource, action, extra)) return deny("forbidden");
 
-  if (COURSE_SCOPED.includes(resource as any) && p.role !== "admin") {
+  if (COURSE_SCOPED.includes(resource as any) && p.role !== "admin" && !isRowScoped(p)) {
     let courseId = opts.courseId ?? null;
     if (!courseId && opts.sessionId) {
       const { data: s } = await svc.from("attendance_sessions").select("course_id").eq("id", opts.sessionId).single();

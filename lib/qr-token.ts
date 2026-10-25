@@ -42,3 +42,13 @@ export async function verifyQrToken(secret: string, token: string): Promise<{ si
   if (typeof payload.sid !== "string" || typeof payload.nonce !== "string") throw new Error("bad_claims");
   return { sid: payload.sid, nonce: payload.nonce };
 }
+
+/**
+ * Nonce replay rule: a duplicate claim of the same (session, student, nonce)
+ * is only abuse when the existing claim is older than the double-tap window —
+ * within it, two concurrent scans of the same code stay idempotent (the
+ * attendance unique constraint keeps exactly one record).
+ */
+export function isNonceReplay(ageMs: number, windowMs = 15_000): boolean {
+  return ageMs > windowMs;
+}

@@ -55,7 +55,7 @@ export default function StudentHome() {
   const [disputed, setDisputed] = useState<Set<string>>(new Set());
   const [excuses, setExcuses] = useState<any[]>([]);
   const [showExcuse, setShowExcuse] = useState(false);
-  const [excForm, setExcForm] = useState({ course_id: "", reason: "" });
+  const [excForm, setExcForm] = useState({ course_id: "", session_id: "", reason: "" });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [userId, setUserId] = useState("");
@@ -207,7 +207,7 @@ export default function StudentHome() {
     });
     if (r.ok) {
       setShowExcuse(false);
-      setExcForm({ course_id: "", reason: "" });
+      setExcForm({ course_id: "", session_id: "", reason: "" });
       const ex = await fetch("/api/console/excuses").then(x => x.json()).catch(() => ({ rows: [] }));
       setExcuses(ex.rows ?? []);
       toast.success(t.createdOk);
@@ -471,13 +471,36 @@ export default function StudentHome() {
                 <select
                   id="exc-course"
                   value={excForm.course_id}
-                  onChange={e => setExcForm({ ...excForm, course_id: e.target.value })}
+                  onChange={e => setExcForm({ ...excForm, course_id: e.target.value, session_id: "" })}
                   className="flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm"
                 >
                   <option value="">— {t.course}</option>
                   {courses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name_ar}</option>)}
                 </select>
               </div>
+              {excForm.course_id && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="exc-session">{t.sessionType}</Label>
+                  <select
+                    id="exc-session"
+                    value={excForm.session_id}
+                    onChange={e => setExcForm({ ...excForm, session_id: e.target.value })}
+                    className="flex min-h-[40px] w-full rounded-base border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">— {t.sessionType}</option>
+                    {sessions
+                      .filter(s => s.course_id === excForm.course_id)
+                      .sort((a, b) => +new Date(b.starts_at) - +new Date(a.starts_at))
+                      .slice(0, 30)
+                      .map(s => (
+                        <option key={s.id} value={s.id}>
+                          {new Date(s.starts_at).toLocaleDateString()} · {fmtTime(s.starts_at, locale)}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-[12px] text-muted-foreground">{t.excuseFor}</p>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="exc-reason">{t.comment}</Label>
                 <Textarea id="exc-reason" value={excForm.reason} onChange={e => setExcForm({ ...excForm, reason: e.target.value })} rows={3} dir="auto" placeholder={t.contestHint} />
