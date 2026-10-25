@@ -231,7 +231,9 @@ lint exit 0 with warnings only.
 - **Migration 014 unapplied (operational, open).** Adds
   `notification_prefs`, `push_subscriptions`, `consents`, RLS and two
   notification defaults. Additive and safe, but not applied live in this
-  phase; the Me screen falls back to `localStorage` and says so.
+  phase; the Me screen falls back to `localStorage` and says so. Verified
+  against the live project: migration head is `013_qr_scans_retention`, and
+  none of the three 014 tables exist yet.
 - **Passkeys still broken (high, open).** Routes target the pre-v14
   `@simplewebauthn/server` shape, and authentication finish does not create a
   session. The UI lists existing passkeys but deliberately offers no

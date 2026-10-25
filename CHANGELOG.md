@@ -97,7 +97,8 @@ Format loosely follows Keep a Changelog; versions are not tagged yet.
 ### Known gaps
 
 - Migration 014 is not applied live; server-side notification preferences and
-  the consent ledger are inert until it is.
+  the consent ledger are inert until it is. Verified via `list_migrations`:
+  live head is `013_qr_scans_retention`, and the 014 tables do not exist.
 - Passkey registration/authentication is broken against the installed
   `@simplewebauthn/server` v14 API and authentication does not create a session.
 - `npm install` reports 35 advisories in the dependency tree (5 low, 2 moderate,

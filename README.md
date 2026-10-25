@@ -47,10 +47,9 @@ University (NCTU) with NCTU (NTG) as the initial partner program.
 
 Tests: `tests/attendance.test.mjs`, `tests/hardening.test.mjs`,
 `tests/scan-input.test.mjs`, `tests/permissions.test.mjs`,
-`tests/onboarding-validation.test.mjs`, `tests/recurrence.test.mjs`,
-`tests/timetable.test.mjs` (inside recurrence), `tests/ntg-pdf.test.mjs`
-(intentionally skipped). Current result: **88 passing, 0 failing**, one skipped
-PDF fixture.
+`tests/onboarding-validation.test.mjs`, `tests/recurrence.test.mjs`
+(timetable + recurrence suites), `tests/ntg-pdf.test.mjs` (intentionally
+skipped). Current result: **88 passing, 0 failing**, one skipped PDF fixture.
 
 CI (`.github/workflows/ci.yml`) additionally runs the bundle budget (fails if `/student`
 or the scanner routes exceed their caps) and Lighthouse. Lighthouse has no login flow, so
