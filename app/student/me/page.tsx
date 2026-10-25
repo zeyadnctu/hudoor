@@ -513,7 +513,7 @@ export default function StudentMePage() {
             disabled={pendingDelete}
           >
             <Trash2 size={16} strokeWidth={2} />
-            {pendingDelete ? t.meDevicePending.replace(t.meDevice, t.meDelete) : t.meDelete}
+            {pendingDelete ? t.meDeletePending : t.meDelete}
           </Button>
           <p className="mt-2 text-[11px] text-muted-foreground">{t.meDeleteHint}</p>
         </div>

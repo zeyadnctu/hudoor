@@ -17,6 +17,7 @@ import { toast } from "@/components/hudoor/toast";
 import { cn } from "@/lib/utils";
 import {
   summariseAttendance,
+  normalizeRule,
   heatmapCells,
   verdictLabelKey,
   type AttendanceSession,
@@ -270,11 +271,20 @@ export default function StudentAttendancePage() {
     const percent = total === 0 ? 0 : Math.round((counted / total) * 100);
     const thresholds = [...new Set(perCourse.map(c => c.summary.threshold))];
     const threshold = thresholds.length === 1 ? thresholds[0] : 75;
+    const weights = [...new Set(perCourse.map(c => normalizeRule(c.course.attendance_rule).lateWeight))];
+    // With mixed course thresholds there is no single line, so the overall
+    // verdict follows the least favourable course instead of a default.
     const verdict: AttendanceVerdict =
-      total === 0 ? "none" : percent >= threshold ? "safe" : percent >= threshold - 10 ? "watch" : "at_risk";
+      total === 0
+        ? "none"
+        : perCourse.some(c => c.summary.verdict === "at_risk")
+          ? "at_risk"
+          : perCourse.some(c => c.summary.verdict === "watch")
+            ? "watch"
+            : "safe";
     const margins = perCourse.filter(c => c.summary.total > 0).map(c => c.summary.safeMisses);
     const safeMisses = margins.length ? Math.min(...margins) : 0;
-    return { present, late, absent, excused, total, counted, percent, threshold, thresholds, verdict, safeMisses };
+    return { present, late, absent, excused, total, counted, percent, threshold, thresholds, weights, verdict, safeMisses };
   }, [perCourse]);
 
   const attention = useMemo(
@@ -473,7 +483,7 @@ export default function StudentAttendancePage() {
         <div className="flex items-start gap-2 border-t border-border px-5 py-3 text-[11px] leading-relaxed text-muted-foreground">
           <Info size={14} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden="true" />
           <p>
-            {`${t.attThreshold} ${overall.thresholds.length === 1 ? overall.threshold : 75}% · ${t.attLateWeight} ×1 · ${t.attExcusedRule}`}
+            {`${t.attThreshold} ${overall.thresholds.length > 1 ? overall.thresholds.join(" / ") : overall.threshold}% · ${t.attLateWeight} ${overall.weights.length ? overall.weights.map(w => `×${w}`).join(" / ") : "×1"} · ${t.attExcusedRule}`}
           </p>
         </div>
       </section>
