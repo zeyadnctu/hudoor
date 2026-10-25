@@ -11,19 +11,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LazyStepper, LazyBlurText } from "@/components/hudoor/bits";
 import { EmptyState } from "@/components/hudoor/empty-state";
-import { School } from "lucide-react";
+import { School, Loader2 } from "lucide-react";
 
 const DRAFT_KEY = "hudoor_onboarding_draft";
+
+/* Onboarding flow:
+   - no details yet            → wizard (3 steps)
+   - details + approved        → straight to /student (1 hop, no loop)
+   - details + NOT approved    → waiting screen (previously this case ping-ponged
+     forever between /onboarding and /student: the page pushed /student, the
+     approval gate bounced it back)
+   Speed: auth comes from getSession() (local cookie read, no network call);
+   profile row + programs load in ONE parallel batch. */
 
 export default function Onboarding() {
   const { t } = useApp();
   const r = useRouter();
   const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [waiting, setWaiting] = useState(false);
   const [progs, setProgs] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [done, setDone] = useState(false);
-  const { register, handleSubmit, watch, setValue, trigger, formState: { errors } } = useForm({
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { register, handleSubmit, watch, trigger, formState: { errors } } = useForm({
     resolver: zodResolver(onboardingSchema) as any,
     defaultValues: (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { return {}; } })()
   });
@@ -40,18 +53,33 @@ export default function Onboarding() {
   useEffect(() => {
     (async () => {
       const sb = browserSupabase();
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) return;
-      // If onboarding already completed, redirect to student home
-      const { data: det } = await sb.from("student_details").select("id").eq("user_id", user.id).maybeSingle();
-      if (det) { r.push("/student"); return; }
-      const { data } = await sb.from("programs").select("*").eq("archived", false).order("type", { ascending: false }).order("code");
-      const rows = (data ?? []) as any[];
+      // Local cookie read for the user id — no auth-server round trip.
+      const { data: { session } } = await sb.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) { r.push("/login"); return; }
+      // Single parallel batch: details + status, and the program list.
+      const [detRes, profRes, progRes] = await Promise.all([
+        sb.from("student_details").select("id").eq("user_id", uid).maybeSingle(),
+        sb.from("profiles").select("status").eq("id", uid).maybeSingle(),
+        sb.from("programs").select("*").eq("archived", false).order("code")
+      ]);
+      const hasDetails = !!(detRes.data as any)?.id;
+      const status = (profRes.data as any)?.status;
       // partner programs first, then the rest by code
+      const rows = (progRes.data ?? []) as any[];
       rows.sort((a, b) => (a.type === b.type ? a.code.localeCompare(b.code) : a.type === "partner" ? -1 : 1));
       setProgs(rows);
+      if (hasDetails) {
+        if (status === "approved") { r.replace("/student"); return; }
+        // details exist but not approved yet: stay put and explain (no loop)
+        setWaiting(true);
+        setLoading(false);
+        return;
+      }
+      setLoading(false);
     })();
   }, []);
+
   useEffect(() => {
     setLevels([]); setGroups([]);
     if (!progId) return;
@@ -84,33 +112,76 @@ export default function Onboarding() {
   }
 
   async function submit(v: any) {
-    // final step validates program/level/section before leaving
     const ok = await trigger(["program_id", "level_id", "section_id"] as any);
     if (!ok) return;
-    const sb = browserSupabase();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) { r.push("/login"); return; }
-    const level = levels.find(l => l.id === v.level_id);
-    const group = groups.find(g => g.id === v.section_id);
-    const { error } = await sb.from("student_details").upsert({
-      user_id: user.id, ...v,
-      level_year: Number(level?.position ?? 1),
-      section_group: group?.name ?? "sec1"
-    });
-    if (error) return;
-    try { localStorage.removeItem(DRAFT_KEY); } catch {}
-    setDone(true);
+    setFormError(""); setSaving(true);
+    try {
+      const sb = browserSupabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) { r.push("/login"); return; }
+      const level = levels.find(l => l.id === v.level_id);
+      const group = groups.find(g => g.id === v.section_id);
+      // merge on the user_id unique column: repeated submits UPDATE, never 409
+      const { error } = await sb.from("student_details").upsert({
+        user_id: uid, ...v,
+        level_year: Number(level?.position ?? 1),
+        section_group: group?.name ?? "sec1"
+      }, { onConflict: "user_id" });
+      if (error) {
+        if (error.code === "23505") {
+          setFormError(`${t.err_university_id_taken} — ${t.err_university_id_taken_fix}`);
+        } else {
+          setFormError(error.message);
+        }
+        return;
+      }
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+      // approved ahead of time? go straight in; otherwise show the waiting screen
+      const { data: prof } = await sb.from("profiles").select("status").eq("id", uid).maybeSingle();
+      if ((prof as any)?.status === "approved") {
+        r.replace("/student");
+        return;
+      }
+      setDone(true);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (done) {
+  if (loading) {
+    return (
+      <main className="dot-grid mx-auto w-full max-w-md px-4 py-16 text-center">
+        <Loader2 size={26} className="mx-auto animate-spin text-muted-foreground" />
+      </main>
+    );
+  }
+
+  // Completed profile, admin approval still pending.
+  if (waiting || done) {
     return (
       <main className="mx-auto w-full max-w-md px-4 py-16">
         <EmptyState
           icon={<School size={28} strokeWidth={2} />}
           title={t.onboardingDone}
-          hint={t.checkEmailHint}
+          hint={done ? String(t.awaiting_approval ?? "") : String(t.onboardingDone ?? "")}
           withGrid
-          action={<a href="/student" className="block"><Button className="w-full">{t.myAttendance}</Button></a>}
+          action={
+            <Button
+              className="w-full"
+              onClick={async () => {
+                const sb = browserSupabase();
+                const { data: { session } } = await sb.auth.getSession();
+                const uid = session?.user?.id;
+                if (!uid) { r.push("/login"); return; }
+                const { data: prof } = await sb.from("profiles").select("status").eq("id", uid).maybeSingle();
+                if ((prof as any)?.status === "approved") r.replace("/student");
+                else location.reload();
+              }}
+            >
+              {t.refreshSession ?? "تحديث"}
+            </Button>
+          }
         />
       </main>
     );
@@ -125,12 +196,18 @@ export default function Onboarding() {
       </h1>
       <p className="mt-1 text-muted-foreground">{t.askOnlyNeeded}</p>
 
+      {formError && (
+        <p role="alert" className="mt-4 rounded-base bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+          {formError}
+        </p>
+      )}
+
       <form onSubmit={handleSubmit(submit)} className="mt-6">
         <LazyStepper
           step={step}
           onStepChange={handleStepChange}
           onCompleted={handleSubmit(submit) as () => void}
-          labels={{ back: t.back, next: t.next, complete: t.save }}
+          labels={{ back: t.back, next: t.next, complete: saving ? "..." : t.save }}
           steps={[
             {
               title: t.fullName,
