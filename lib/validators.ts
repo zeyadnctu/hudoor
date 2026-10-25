@@ -19,15 +19,15 @@ export const sessionCreateSchema = z.object({
 });
 
 export const onboardingSchema = z.object({
-  full_name_ar: z.string().min(2),
-  full_name_en: z.string().min(2),
-  university_id: z.string().min(2).max(32),
-  program_id: z.string().uuid(),
-  level_id: z.string().uuid(),
-  section_id: z.string().uuid(),
+  full_name_ar: z.string().trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  full_name_en: z.string().trim().min(2, { message: "من حرفين على الأقل / at least 2 characters" }),
+  university_id: z.string().trim().min(2, { message: "أدخل رقمك الجامعي / enter your university ID" }).max(32),
+  program_id: z.string().uuid({ message: "اختر البرنامج / pick a program" }),
+  level_id: z.string().uuid({ message: "اختر المستوى / pick a level" }),
+  section_id: z.string().uuid({ message: "اختر المجموعة / pick a group" }),
   level_year: z.number().int().min(1).max(12).optional(),
   section_group: z.string().min(1).max(32).optional(),
-  phone: z.string().min(5).max(24)
+  phone: z.string().trim().min(5, { message: "رقم غير صالح / invalid phone number" }).max(24)
 });
 
 export const manualMarkSchema = z.object({

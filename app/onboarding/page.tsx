@@ -187,7 +187,8 @@ export default function Onboarding() {
     );
   }
 
-  const errText = (e: any) => (e ? "مطلوب / required" : undefined);
+  // surface the actual schema message (bilingual) instead of a bare "required"
+  const errText = (e: any) => (e ? e.message ?? "مطلوب / required" : undefined);
 
   return (
     <main className="dot-grid mx-auto w-full max-w-md px-4 py-8">
@@ -253,7 +254,7 @@ export default function Onboarding() {
                       <option value="">—</option>
                       {progs.map(p => <option key={p.id} value={p.id}>{p.type === "partner" ? "★ " : ""}{p.code} · {p.name_ar}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errors.program_id ? t.required : undefined}</p>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.program_id)}</p>
                   </div>
                   <div>
                     <Label htmlFor="level_id">{t.level}</Label>
@@ -261,7 +262,7 @@ export default function Onboarding() {
                       <option value="">—</option>
                       {levels.map(l => <option key={l.id} value={l.id}>{l.name_ar} / {l.name_en}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errors.level_id ? t.required : undefined}</p>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.level_id)}</p>
                   </div>
                   <div>
                     <Label htmlFor="section_id">{t.group}</Label>
@@ -269,7 +270,7 @@ export default function Onboarding() {
                       <option value="">—</option>
                       {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
-                    <p className="mt-1 text-sm font-medium text-destructive">{errors.section_id ? t.required : undefined}</p>
+                    <p className="mt-1 text-sm font-medium text-destructive">{errText(errors.section_id)}</p>
                   </div>
                 </div>
               )
