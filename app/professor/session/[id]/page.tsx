@@ -21,6 +21,10 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   const [paused, setPaused] = useState(false);
   const [endsAt, setEndsAt] = useState("");
   const [lateAfter, setLateAfter] = useState<number | null>(null);
+  // All students enrolled in this session's course (the manual-mark dropdown).
+  const [roster, setRoster] = useState<{ userId: string; label: string }[]>([]);
+  const [markBusy, setMarkBusy] = useState(false);
+  const [markMsg, setMarkMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function op(name: string) {
     const r = await fetch(`/api/sessions?id=${id}&op=${name}`, { method: "PATCH" });
@@ -64,6 +68,26 @@ export default function SessionLive({ params }: { params: { id: string } }) {
     return () => clearInterval(c);
   }, []);
 
+  async function refreshPresent() {
+    const sb = browserSupabase();
+    const { data: s } = await sb.from("attendance_sessions").select("status,course_id,late_after_min,ends_at,courses(code,name_ar,name_en)").eq("id", id).maybeSingle();
+    if ((s as any)?.status === "ended") setEnded(true);
+    setPaused((s as any)?.status === "paused");
+    setEndsAt((s as any).ends_at ?? "");
+    setLateAfter((s as any).late_after_min ?? null);
+    setCourse((s as any).courses ?? null);
+    const { data } = await sb.from("attendance_records").select("id,student_id,scanned_at,method,status").eq("session_id", id).order("scanned_at", { ascending: false }).limit(200);
+    const recs = data ?? [];
+    const ids = [...new Set(recs.map((x: any) => x.student_id))];
+    let names: Record<string, string> = {};
+    if (ids.length) {
+      const { data: dets } = await sb.from("student_details").select("user_id,full_name_ar,full_name_en,university_id").in("user_id", ids);
+      (dets ?? []).forEach((d: any) => { names[d.user_id] = `${d.full_name_ar} — ${d.university_id}`; });
+    }
+    setPresent(recs.map((x: any) => ({ ...x, label: names[x.student_id] ?? x.student_id.slice(0, 8) })));
+    setLoading(false);
+  }
+
   useEffect(() => {
     const sb = browserSupabase();
     (async () => {
@@ -73,6 +97,22 @@ export default function SessionLive({ params }: { params: { id: string } }) {
       setEndsAt((s as any)?.ends_at ?? "");
       setLateAfter((s as any)?.late_after_min ?? null);
       setCourse((s as any)?.courses ?? null);
+      const courseId = (s as any)?.course_id;
+      if (courseId) {
+        const { data: enr } = await sb.from("enrollments").select("student_id,section").eq("course_id", courseId);
+        const ids = [...new Set(((enr ?? []) as any[]).map((e) => e.student_id))];
+        const { data: dets } = await sb.from("student_details").select("user_id,full_name_ar,full_name_en,university_id").in("user_id", ids);
+        const detMap = new Map(((dets ?? []) as any[]).map((d) => [d.user_id, d]));
+        setRoster(((enr ?? []) as any[])
+          .map((e) => {
+            const d: any = detMap.get(e.student_id);
+            const name = d?.full_name_ar || d?.full_name_en || e.student_id.slice(0, 8);
+            return { userId: e.student_id, label: `${name} — ${d?.university_id ?? ""}`.trim() };
+          })
+          .filter((r) => r.userId));
+      } else {
+        setRoster([]);
+      }
       const { data } = await sb.from("attendance_records").select("id,student_id,scanned_at,method,status").eq("session_id", id).order("scanned_at", { ascending: false }).limit(200);
       const recs = data ?? [];
       const ids = [...new Set(recs.map((x: any) => x.student_id))];
@@ -90,6 +130,14 @@ export default function SessionLive({ params }: { params: { id: string } }) {
         const { data } = await sb.from("student_details").select("full_name_ar,university_id").eq("user_id", sid).maybeSingle();
         setPresent(p => [{ ...(payload.new as any), label: data ? `${(data as any).full_name_ar} — ${(data as any).university_id}` : sid.slice(0, 8) }, ...p]);
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "attendance_records", filter: `session_id=eq.${id}` }, async (payload) => {
+        const rec = payload.new as any;
+        setPresent(p => p.map(x => (x.id === rec.id ? { ...x, status: rec.status, method: rec.method, scanned_at: rec.scanned_at } : x)));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "attendance_records", filter: `session_id=eq.${id}` }, async (payload) => {
+        const rid = (payload.old as any).id;
+        setPresent(p => p.filter(x => x.id !== rid));
+      })
       .subscribe();
     return () => { sb.removeChannel(ch); };
   }, [id]);
@@ -101,8 +149,19 @@ export default function SessionLive({ params }: { params: { id: string } }) {
   }
   async function markManual() {
     if (!manual.student_id || !manual.reason) return;
+    setMarkBusy(true);
     const r = await fetch("/api/attendance/manual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: id, student_id: manual.student_id, reason: manual.reason, status: manual.status }) });
-    if (r.ok) setManual({ student_id: "", reason: "", status: "present" });
+    setMarkBusy(false);
+    if (r.ok) {
+      setManual({ student_id: "", reason: "", status: "present" });
+      setMarkMsg(null);
+      // real-time-ish refresh: the record insert is also broadcast over
+      // postgres_changes, this just re-reads in case it was a manual edit.
+      await refreshPresent();
+    } else {
+      const j = await r.json().catch(() => ({}));
+      setMarkMsg({ ok: false, text: j.message ?? "Failed to save manual mark" });
+    }
   }
   async function unmark(recordId: string) {
     const reason = prompt(`${t.unmark}? ${t.manualReason}`);
@@ -234,7 +293,25 @@ export default function SessionLive({ params }: { params: { id: string } }) {
               >
                 <h3 className="font-display text-lg font-bold">{t.manualMark}</h3>
                 <div className="mt-2 grid gap-2">
-                  <div><Label>Student ID</Label><Input placeholder="uuid" value={manual.student_id} onChange={e => setManual({ ...manual, student_id: e.target.value })} /></div>
+                  <div>
+                    <Label htmlFor="manual_student">{t.manualStudent}</Label>
+                    <select
+                      id="manual_student"
+                      value={manual.student_id}
+                      onChange={e => setManual({ ...manual, student_id: e.target.value })}
+                      disabled={!roster.length}
+                      className="min-h-[48px] w-full rounded-md2 border-2 border-black/15 bg-paper px-4 outline-none focus:border-register dark:border-white/20 dark:bg-white/5 disabled:opacity-50"
+                    >
+                      <option value="">— {t.manualStudent} —</option>
+                      {roster.map((r) => <option key={r.userId} value={r.userId}>{r.label}</option>)}
+                    </select>
+                    {markMsg && (
+                      <p role="alert" className={`mt-1.5 text-[13px] font-semibold ${markMsg.ok ? "text-primary" : "text-brick"}`}>{markMsg.text}</p>
+                    )}
+                    {!roster.length && (
+                      <p className="mt-1.5 text-[13px] font-medium text-muted-foreground">{t.noStudentsMarked}</p>
+                    )}
+                  </div>
                   <div><Label>{t.status}</Label>
                     <select value={manual.status} onChange={e => setManual({ ...manual, status: e.target.value })} className="min-h-[48px] w-full rounded-md2 border-2 border-black/15 bg-paper px-4 outline-none focus:border-register dark:border-white/20 dark:bg-white/5">
                       <option value="present">present</option>
